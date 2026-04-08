@@ -158,6 +158,10 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
     mu_cut: float
     xs_large: DataBase
     mu: DistributionMultiTable
+    mu_coupled: DistributionMultiTable
+    gfp2_mu_star: float
+    gfp2_transition_rate: DataBase
+    gfp2_sigma_delta0: DataBase
 
     def __init__(
         self,
@@ -167,21 +171,28 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
         reference_frame,
         xs_large,
         mu,
+        mu_coupled,
+        gfp2_mu_star,
+        gfp2_transition_rate,
+        gfp2_sigma_delta0,
     ):
         type_ = ELECTRON_REACTION_ELASTIC_SCATTERING
         super().__init__(type_, MT, xs, xs_offset, reference_frame)
         self.mu_cut = MU_CUTOFF
         self.xs_large = xs_large
         self.mu = mu
+        self.mu_coupled = mu_coupled
+        self.gfp2_mu_star = gfp2_mu_star
+        self.gfp2_transition_rate = gfp2_transition_rate
+        self.gfp2_sigma_delta0 = gfp2_sigma_delta0
 
     @classmethod
     def from_h5_group(cls, h5_group):
         MT, xs, xs_offset, reference_frame = set_basic_properties(h5_group)
 
-        large_angle = h5_group["large_angle"]
-        xs_large = DataTable(large_angle["xs_energy"][()], large_angle["xs"][()])
+        xs_large = DataTable(h5_group["xs_energy"][()], h5_group["xs_large"][()])
 
-        mu_group = large_angle["scattering_cosine"]
+        mu_group = h5_group["scattering_cosine"]
         mu = DistributionMultiTable(
             mu_group["energy_grid"][()],
             mu_group["energy_offset"][()],
@@ -189,13 +200,51 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
             mu_group["PDF"][()],
         )
 
-        return cls(MT, xs, xs_offset, reference_frame, xs_large, mu)
+        mu_coupled_group = h5_group["scattering_cosine_coupled"]
+        mu_coupled = DistributionMultiTable(
+            mu_coupled_group["energy_grid"][()],
+            mu_coupled_group["energy_offset"][()],
+            mu_coupled_group["value"][()],
+            mu_coupled_group["PDF"][()],
+        )
+
+        gfp2_group = h5_group["gfp2"]
+        energy_grid = gfp2_group["energy_grid"][()]
+        gfp2_mu_star = float(gfp2_group["mu_star"][()])
+        gfp2_transition_rate = DataTable(energy_grid, gfp2_group["transition_rate"][()])
+        gfp2_sigma_delta0 = DataTable(energy_grid, gfp2_group["Sigma_delta0"][()])
+
+        return cls(
+            MT,
+            xs,
+            xs_offset,
+            reference_frame,
+            xs_large,
+            mu,
+            mu_coupled,
+            gfp2_mu_star,
+            gfp2_transition_rate,
+            gfp2_sigma_delta0,
+        )
 
     def __repr__(self):
         text = super().__repr__()
         text += f"  - Mu cut: {self.mu_cut}\n"
         text += f"  - Large angle XS: DataTable [ID: {self.xs_large.ID}]\n"
-        text += f"  - Scattering cosine: {distribution.decode_type(self.mu.type)} [ID: {self.mu.ID}]\n"
+        text += (
+            f"  - Scattering cosine: "
+            f"{distribution.decode_type(self.mu.type)} [ID: {self.mu.ID}]\n"
+        )
+        text += (
+            f"  - Coupled scattering cosine: "
+            f"{distribution.decode_type(self.mu_coupled.type)} "
+            f"[ID: {self.mu_coupled.ID}]\n"
+        )
+        text += f"  - GFP2 mu_star: {self.gfp2_mu_star}\n"
+        text += f"  - GFP2 transition rate: Data [ID: {self.gfp2_transition_rate.ID}]\n"
+        text += (
+            f"  - GFP2 delta cross section: Data [ID: {self.gfp2_sigma_delta0.ID}]\n"
+        )
         return text
 
 
