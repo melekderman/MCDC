@@ -59,17 +59,15 @@ def neutron_production_xs(reaction_type, particle_container, mcdc, data):
 def collision_distance(particle_container, mcdc, data):
     particle = particle_container[0]
 
-    # Get total cross-section
-    reaction_type = NEUTRON_REACTION_TOTAL
     if particle["particle_type"] == PARTICLE_ELECTRON:
-        reaction_type = ELECTRON_REACTION_TOTAL
+        return electron.collision_distance(particle_container, mcdc, data)
+
+    reaction_type = NEUTRON_REACTION_TOTAL
     SigmaT = macro_xs(reaction_type, particle_container, mcdc, data)
 
-    # Vacuum material?
     if SigmaT == 0.0:
         return INF
 
-    # Sample collision distance
     xi = rng.lcg(particle_container)
     distance = -math.log(xi) / SigmaT
     return distance

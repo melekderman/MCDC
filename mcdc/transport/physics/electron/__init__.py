@@ -1,2 +1,2 @@
-from .interface import particle_speed, macro_xs, collision
+from .interface import particle_speed, macro_xs, collision, collision_distance
 import mcdc.transport.physics.electron.native as native

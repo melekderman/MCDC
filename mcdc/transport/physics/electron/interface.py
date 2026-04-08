@@ -25,6 +25,16 @@ def macro_xs(reaction_type, particle_container, mcdc, data):
 
 
 # ======================================================================================
+# Collision distance
+# ======================================================================================
+
+
+@njit
+def collision_distance(particle_container, mcdc, data):
+    return native.collision_distance(particle_container, mcdc, data)
+
+
+# ======================================================================================
 # Collision
 # ======================================================================================
 
