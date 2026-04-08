@@ -66,6 +66,9 @@ class Settings(ObjectSingleton):
     electron_transport: bool = False
     proton_transport: bool = False
 
+    # Electron elastic scattering mode
+    electron_elastic_mode: int = ELECTRON_ELASTIC_MODE_COUPLED
+
     def __post_init__(self):
         super().__init__()
 
@@ -157,3 +160,26 @@ class Settings(ObjectSingleton):
                 self.proton_transport = True
             else:
                 print_error(r"Unsupported particle types: {particle}")
+
+
+    def set_electron_elastic_mode(self, mode):
+        if isinstance(mode, str):
+            mode_key = mode.strip().lower()
+            mapping = {
+                "decoupled": ELECTRON_ELASTIC_MODE_DECOUPLED,
+                "coupled": ELECTRON_ELASTIC_MODE_COUPLED,
+                "gfp2": ELECTRON_ELASTIC_MODE_GFP2,
+            }
+            if mode_key not in mapping:
+                print_error("Unknown electron elastic mode")
+            mode = mapping[mode_key]
+
+        valid_modes = {
+            ELECTRON_ELASTIC_MODE_DECOUPLED,
+            ELECTRON_ELASTIC_MODE_COUPLED,
+            ELECTRON_ELASTIC_MODE_GFP2,
+        }
+        if mode not in valid_modes:
+            print_error("Unknown electron elastic mode")
+
+        self.electron_elastic_mode = mode
