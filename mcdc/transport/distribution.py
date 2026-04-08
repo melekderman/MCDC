@@ -289,6 +289,148 @@ def sample_multi_table(E, rng_state, multi_table, data, scale=False):
 
 
 @njit
+def sample_multi_table_cdf(E, rng_state, multi_table, data):
+    grid = mcdc_get.multi_table_distribution.grid_all(multi_table, data)
+    grid_length = len(grid)
+
+    if E <= grid[0]:
+        idx0 = 0
+        idx1 = 0
+        f = 0.0
+    elif E >= grid[-1]:
+        idx0 = grid_length - 1
+        idx1 = idx0
+        f = 0.0
+    else:
+        idx0 = find_bin(E, grid)
+        idx1 = idx0 + 1
+        E0 = grid[idx0]
+        E1 = grid[idx1]
+        f = (E - E0) / (E1 - E0)
+
+    start0, end0 = _multi_table_range(idx0, grid_length, multi_table, data)
+    start1, end1 = _multi_table_range(idx1, grid_length, multi_table, data)
+    xi = rng.lcg(rng_state)
+
+    if _multi_table_same_value_grid(start0, end0, start1, end1, multi_table, data):
+        n = end0 - start0
+        lo = 0
+        hi = n - 2
+        k = 0
+
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            c_mid = (1.0 - f) * mcdc_get.multi_table_distribution.cdf(
+                start0 + mid, multi_table, data
+            ) + f * mcdc_get.multi_table_distribution.cdf(
+                start1 + mid, multi_table, data
+            )
+            c_next = (1.0 - f) * mcdc_get.multi_table_distribution.cdf(
+                start0 + mid + 1, multi_table, data
+            ) + f * mcdc_get.multi_table_distribution.cdf(
+                start1 + mid + 1, multi_table, data
+            )
+
+            if c_mid <= xi < c_next:
+                k = mid
+                break
+            if xi < c_mid:
+                hi = mid - 1
+            else:
+                lo = mid + 1
+        else:
+            if lo < 0:
+                k = 0
+            elif lo > n - 2:
+                k = n - 2
+            else:
+                k = lo
+
+        idx_pdf0 = start0 + k
+        idx_pdf1 = start1 + k
+        c = (1.0 - f) * mcdc_get.multi_table_distribution.cdf(
+            idx_pdf0, multi_table, data
+        ) + f * mcdc_get.multi_table_distribution.cdf(idx_pdf1, multi_table, data)
+        p0 = (1.0 - f) * mcdc_get.multi_table_distribution.pdf(
+            idx_pdf0, multi_table, data
+        ) + f * mcdc_get.multi_table_distribution.pdf(idx_pdf1, multi_table, data)
+        p1 = (1.0 - f) * mcdc_get.multi_table_distribution.pdf(
+            idx_pdf0 + 1, multi_table, data
+        ) + f * mcdc_get.multi_table_distribution.pdf(idx_pdf1 + 1, multi_table, data)
+        val0 = mcdc_get.multi_table_distribution.value(idx_pdf0, multi_table, data)
+        val1 = mcdc_get.multi_table_distribution.value(idx_pdf0 + 1, multi_table, data)
+
+        return _sample_linear_pdf_segment(xi, c, p0, p1, val0, val1)
+
+    idx = idx0
+    if idx0 != idx1 and rng.lcg(rng_state) <= f:
+        idx = idx1
+
+    start, end = _multi_table_range(idx, grid_length, multi_table, data)
+    return _sample_multi_table_selected(start, end, xi, multi_table, data)
+
+
+@njit
+def _multi_table_range(idx, grid_length, multi_table, data):
+    start = int(mcdc_get.multi_table_distribution.offset(idx, multi_table, data))
+    if idx + 1 == grid_length:
+        end = multi_table["value_length"]
+    else:
+        end = int(mcdc_get.multi_table_distribution.offset(idx + 1, multi_table, data))
+    return start, end
+
+
+@njit
+def _multi_table_same_value_grid(start0, end0, start1, end1, multi_table, data):
+    n0 = end0 - start0
+    n1 = end1 - start1
+    if n0 != n1 or n0 <= 1:
+        return False
+
+    if mcdc_get.multi_table_distribution.value(
+        start0, multi_table, data
+    ) != mcdc_get.multi_table_distribution.value(start1, multi_table, data):
+        return False
+
+    if mcdc_get.multi_table_distribution.value(
+        end0 - 1, multi_table, data
+    ) != mcdc_get.multi_table_distribution.value(end1 - 1, multi_table, data):
+        return False
+
+    return True
+
+
+@njit
+def _sample_linear_pdf_segment(xi, c, p0, p1, val0, val1):
+    m = (p1 - p0) / (val1 - val0)
+    if m == 0.0:
+        return val0 + (xi - c) / p0
+    return val0 + (math.sqrt(p0**2 + 2.0 * m * (xi - c)) - p0) / m
+
+
+@njit
+def _sample_multi_table_selected(start, end, xi, multi_table, data):
+    size = end - start
+    cdf = mcdc_get.multi_table_distribution.cdf_chunk(start, size, multi_table, data)
+
+    idx = find_bin(xi, cdf)
+    if idx < 0:
+        idx = 0
+    elif idx > size - 2:
+        idx = size - 2
+
+    c = cdf[idx]
+    idx += start
+
+    p0 = mcdc_get.multi_table_distribution.pdf(idx, multi_table, data)
+    p1 = mcdc_get.multi_table_distribution.pdf(idx + 1, multi_table, data)
+    val0 = mcdc_get.multi_table_distribution.value(idx, multi_table, data)
+    val1 = mcdc_get.multi_table_distribution.value(idx + 1, multi_table, data)
+
+    return _sample_linear_pdf_segment(xi, c, p0, p1, val0, val1)
+
+
+@njit
 def sample_maxwellian(E, rng_state, maxwellian, mcdc, data):
     # Get nuclear temperature
     table = mcdc["table_data"][maxwellian["nuclear_temperature_ID"]]
