@@ -161,7 +161,6 @@ class Settings(ObjectSingleton):
             else:
                 print_error(r"Unsupported particle types: {particle}")
 
-
     def set_electron_elastic_mode(self, mode):
         if isinstance(mode, str):
             mode_key = mode.strip().lower()
