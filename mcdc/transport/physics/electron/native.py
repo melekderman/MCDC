@@ -26,7 +26,6 @@ from mcdc.constant import (
     ELECTRON_ELASTIC_MODE_COUPLED,
     ELECTRON_ELASTIC_MODE_DECOUPLED,
     ELECTRON_ELASTIC_MODE_GFP2,
-    FINE_STRUCTURE_CONSTANT,
     INF,
     LIGHT_SPEED,
     PI,
@@ -518,6 +517,7 @@ def compute_scattering_eta(E, Z):
     pc = math.sqrt(E * (E + 2.0 * ELECTRON_MASS))
     beta = pc / (E + ELECTRON_MASS)
     tau = E / ELECTRON_MASS
+    FINE_STRUCTURE_CONSTANT = 7.2973525693e-3
 
     r = (FINE_STRUCTURE_CONSTANT * ELECTRON_MASS) / (0.885 * pc)
     z_sq = float(Z) ** (2.0 / 3.0)

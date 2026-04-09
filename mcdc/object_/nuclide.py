@@ -42,10 +42,12 @@ class Nuclide(ObjectNonSingleton):
     neutron_capture_xs: NDArray[float64]
     neutron_inelastic_xs: NDArray[float64]
     neutron_fission_xs: NDArray[float64]
+    #
     neutron_elastic_scattering_reactions: list[NeutronReactionElasticScattering]
     neutron_capture_reactions: list[NeutronReactionCapture]
     neutron_inelastic_scattering_reactions: list[NeutronReactionInelasticScattering]
     neutron_fission_reactions: list[NeutronReactionFission]
+    #
     neutron_fission_prompt_multiplicity: DataBase
     neutron_fission_delayed_multiplicity: DataBase
     N_neutron_fission_delayed_precursor: int
@@ -77,10 +79,6 @@ class Nuclide(ObjectNonSingleton):
         dir_name = os.getenv("MCDC_LIB")
         file_name = f"{nuclide_name}-{temperature}K.h5"
         file = h5py.File(f"{dir_name}/{file_name}", "r")
-
-        self.atomic_weight_ratio = float(file["atomic_weight_ratio"][()])
-        self.fissionable = bool(file["fissionable"][()])
-        self.excitation_level = int(file["excitation_level"][()])
 
         # The reactions
         rx_names = [

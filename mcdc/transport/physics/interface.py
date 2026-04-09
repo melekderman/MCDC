@@ -59,11 +59,12 @@ def neutron_production_xs(reaction_type, particle_container, mcdc, data):
 def collision_distance(particle_container, mcdc, data):
     particle = particle_container[0]
 
-    if particle["particle_type"] == PARTICLE_ELECTRON:
-        return electron.collision_distance(particle_container, mcdc, data)
-
-    reaction_type = NEUTRON_REACTION_TOTAL
-    SigmaT = macro_xs(reaction_type, particle_container, mcdc, data)
+    # Get total cross-section
+    SigmaT = 0.0
+    if particle["particle_type"] == PARTICLE_NEUTRON:
+        SigmaT = macro_xs(NEUTRON_REACTION_TOTAL, particle_container, mcdc, data)
+    elif particle["particle_type"] == PARTICLE_ELECTRON:
+        SigmaT = macro_xs(ELECTRON_REACTION_TOTAL, particle_container, mcdc, data)
 
     if SigmaT == 0.0:
         return INF

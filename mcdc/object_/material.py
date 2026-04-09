@@ -129,6 +129,11 @@ class Material(MaterialBase):
         self.elements = []
         self.element_densities = np.zeros(len(element_composition))
 
+        # Check if library directory is set
+        lib_dir = os.getenv("MCDC_LIB")
+        if lib_dir is None:
+            print_error("Environment variable MCDC_LIB is not set")
+
         # Check that only one composition is supplied
         if len(nuclide_composition) > 0 and len(element_composition) > 0:
             print_error(
@@ -161,13 +166,20 @@ class Material(MaterialBase):
             self.element_densities[i] = element_density
             self.element_composition[element] = element_density
 
-        # Loop over the items in the composition
+        # Loop over the items in the nuclide composition
         for i, (key, value) in enumerate(nuclide_composition.items()):
             nuclide_name = key
             nuclide_density = value
 
             # Get supported temperature
             nearest_temperature = min(TEMPERATURES, key=lambda x: abs(x - temperature))
+
+            # Check if nuclide-temperature is available in the library
+            file_name = f"{nuclide_name}-{nearest_temperature}K.h5"
+            if not file_name in os.listdir(lib_dir):
+                print_error(
+                    f"Nuclide {nuclide_name} at temperature {nearest_temperature} K is not available in the library"
+                )
 
             # Check if nuclide is already created
             found = False
@@ -188,15 +200,25 @@ class Material(MaterialBase):
             self.nuclide_densities[i] = nuclide_density
             self.nuclide_composition[nuclide] = nuclide_density
 
+            # Promote nuclide flags to material
+            if nuclide.fissionable:
+                self.fissionable = True
+
     def __repr__(self):
         text = super().__repr__()
         text += f"  - Temperature: {self.temperature} K\n"
-        text += f"  - Nuclide composition [atoms/barn-cm]\n"
-        for nuclide in self.nuclide_composition.keys():
-            text += f"    - {nuclide.name:<5} | {self.nuclide_composition[nuclide]}\n"
-        text += f"  - Element composition [atoms/barn-cm]\n"
-        for element in self.element_composition.keys():
-            text += f"    - {element.name:<5} | {self.element_composition[element]}\n"
+        if len(self.nuclide_composition) > 0:
+            text += f"  - Nuclide composition [atoms/barn-cm]\n"
+            for nuclide in self.nuclide_composition.keys():
+                text += (
+                    f"    - {nuclide.name:<5} | {self.nuclide_composition[nuclide]}\n"
+                )
+        if len(self.element_composition) > 0:
+            text += f"  - Element composition [atoms/barn-cm]\n"
+            for element in self.element_composition.keys():
+                text += (
+                    f"    - {element.name:<5} | {self.element_composition[element]}\n"
+                )
         return text
 
 
