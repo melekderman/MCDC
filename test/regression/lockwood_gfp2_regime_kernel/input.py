@@ -12,7 +12,7 @@ ENERGY = 1e6  # eV
 CSDA_RANGE = 0.569  # g/cm2
 ANGLE = 0.0
 
-N_PARTICLES = 1000
+N_PARTICLES = 10000
 z0 = 0.0
 
 RHO_G_CM3 = 2.70  # g/cm3
@@ -52,8 +52,7 @@ mcdc.Tally(name="flux", scores=["flux"], mesh=mesh)
 mcdc.Tally(name="s1_current", surface=s1, scores=["net-current"])
 mcdc.Tally(name="s2_current", surface=s2, scores=["net-current"])
 
-mcdc.settings.neutron_transport = False
-mcdc.settings.electron_transport = True
+mcdc.settings.set_transported_particles(["electron"])
 mcdc.settings.set_electron_elastic_mode("gfp2")
 mcdc.settings.set_electron_gfp2_policy("regime")
 mcdc.settings.set_electron_gfp2_scheme("kernel")
