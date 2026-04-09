@@ -56,7 +56,7 @@ mcdc.settings.neutron_transport = False
 mcdc.settings.electron_transport = True
 mcdc.settings.set_electron_elastic_mode("gfp2")
 mcdc.settings.set_electron_gfp2_policy("pure")
-mcdc.settings.set_electron_gfp2_scheme("kernel")
+mcdc.settings.set_electron_gfp2_scheme("elastic_only")
 mcdc.settings.N_particle = N_PARTICLES
 mcdc.settings.active_bank_buffer = N_PARTICLES * 1000
 

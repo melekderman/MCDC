@@ -170,9 +170,6 @@ def gfp2_sigma_delta0_xs(E, reaction, mcdc, data):
 
 @njit
 def reaction_gfp2_enabled(E, reaction, mcdc, data):
-    if not reaction["has_gfp2"]:
-        return False
-
     policy = mcdc["settings"]["electron_gfp2_policy"]
     if policy == ELECTRON_GFP2_POLICY_PURE:
         return True
