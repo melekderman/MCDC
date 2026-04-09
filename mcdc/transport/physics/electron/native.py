@@ -13,6 +13,8 @@ import mcdc.transport.rng as rng
 
 from mcdc.constant import (
     ELECTRON_CUTOFF_ENERGY,
+    ELECTRON_GFP2_POLICY_PURE,
+    ELECTRON_GFP2_SCHEME_KERNEL,
     ELECTRON_GFP2_STATE_0,
     ELECTRON_GFP2_STATE_1,
     ELECTRON_MASS,
@@ -34,13 +36,10 @@ from mcdc.transport.distribution import (
     sample_distribution,
     sample_multi_table_cdf,
 )
-from mcdc.transport.distribution import sample_distribution, sample_multi_table_cdf
-
 from mcdc.transport.physics.util import (
     evaluate_electron_xs_energy_grid,
     scatter_direction,
 )
-
 from mcdc.transport.util import linear_interpolation
 
 # ======================================================================================
@@ -75,25 +74,38 @@ def collision_distance(particle_container, mcdc, data):
     return -math.log(xi) / SigmaT
 
 
+# ======================================================================================
+# Material properties
+# ======================================================================================
+
+
 @njit
 def macro_xs(reaction_type, particle_container, mcdc, data):
     particle = particle_container[0]
     material = mcdc["native_materials"][particle["material_ID"]]
     E = particle["E"]
     elastic_mode = mcdc["settings"]["electron_elastic_mode"]
+    gfp2_scheme = mcdc["settings"]["electron_gfp2_scheme"]
     gfp2_state = particle["g"]
 
     total = 0.0
     for i in range(material["N_element"]):
         element_ID = int(mcdc_get.native_material.element_IDs(i, material, data))
         element = mcdc["elements"][element_ID]
-        element_density = mcdc_get.native_material.element_densities(i, material, data)
 
+        element_density = mcdc_get.native_material.element_densities(i, material, data)
         if elastic_mode == ELECTRON_ELASTIC_MODE_GFP2:
-            xs = total_micro_xs_gfp2(reaction_type, E, element, gfp2_state, mcdc, data)
+            if (
+                gfp2_state == ELECTRON_GFP2_STATE_1
+                or gfp2_scheme == ELECTRON_GFP2_SCHEME_KERNEL
+            ):
+                xs = total_micro_xs_gfp2(
+                    reaction_type, E, element, gfp2_state, mcdc, data
+                )
+            else:
+                xs = total_micro_xs(reaction_type, E, element, data)
         else:
             xs = total_micro_xs(reaction_type, E, element, data)
-
         total += element_density * xs
 
     return total
@@ -124,10 +136,12 @@ def total_micro_xs(reaction_type, E, element, data):
 def reaction_micro_xs(E, reaction_base, element, data):
     idx, E0, E1 = evaluate_electron_xs_energy_grid(E, element, data)
 
+    # Apply offset
     offset = reaction_base["xs_offset_"]
     if idx < offset:
         return 0.0
-    idx -= offset
+    else:
+        idx -= offset
 
     xs0 = mcdc_get.electron_reaction.xs(idx, reaction_base, data)
     xs1 = mcdc_get.electron_reaction.xs(idx + 1, reaction_base, data)
@@ -156,6 +170,39 @@ def gfp2_sigma_delta0_xs(E, reaction, mcdc, data):
 
 
 @njit
+def reaction_gfp2_enabled(E, reaction, mcdc, data):
+    if not reaction["has_gfp2"]:
+        return False
+
+    policy = mcdc["settings"]["electron_gfp2_policy"]
+    if policy == ELECTRON_GFP2_POLICY_PURE:
+        return True
+
+    transition_rate = gfp2_transition_rate_xs(E, reaction, mcdc, data)
+    sigma_delta0 = gfp2_sigma_delta0_xs(E, reaction, mcdc, data)
+    return transition_rate > 0.0 and sigma_delta0 > 0.0
+
+
+@njit
+def element_elastic_state0_total_xs_gfp2(E, element, mcdc, data):
+    total = 0.0
+    for i in range(element["N_electron_elastic_scattering_reaction"]):
+        reaction_ID = int(
+            mcdc_get.element.electron_elastic_scattering_reaction_IDs(i, element, data)
+        )
+        reaction = mcdc["electron_elastic_scattering_reactions"][reaction_ID]
+
+        if reaction_gfp2_enabled(E, reaction, mcdc, data):
+            total += gfp2_transition_rate_xs(E, reaction, mcdc, data)
+        else:
+            reaction_base_ID = reaction["parent_ID"]
+            reaction_base = mcdc["electron_reactions"][reaction_base_ID]
+            total += reaction_micro_xs(E, reaction_base, element, data)
+
+    return total
+
+
+@njit
 def element_gfp2_transition_total_xs(E, element, mcdc, data):
     total = 0.0
     for i in range(element["N_electron_elastic_scattering_reaction"]):
@@ -163,7 +210,8 @@ def element_gfp2_transition_total_xs(E, element, mcdc, data):
             mcdc_get.element.electron_elastic_scattering_reaction_IDs(i, element, data)
         )
         reaction = mcdc["electron_elastic_scattering_reactions"][reaction_ID]
-        total += gfp2_transition_rate_xs(E, reaction, mcdc, data)
+        if reaction_gfp2_enabled(E, reaction, mcdc, data):
+            total += gfp2_transition_rate_xs(E, reaction, mcdc, data)
     return total
 
 
@@ -175,6 +223,8 @@ def element_gfp2_state1_total_xs(E, element, mcdc, data):
             mcdc_get.element.electron_elastic_scattering_reaction_IDs(i, element, data)
         )
         reaction = mcdc["electron_elastic_scattering_reactions"][reaction_ID]
+        if not reaction_gfp2_enabled(E, reaction, mcdc, data):
+            continue
         total += gfp2_sigma_delta0_xs(E, reaction, mcdc, data)
         total += gfp2_transition_rate_xs(E, reaction, mcdc, data)
     return total
@@ -187,12 +237,12 @@ def total_micro_xs_gfp2(reaction_type, E, element, gfp2_state, mcdc, data):
             return element_gfp2_state1_total_xs(E, element, mcdc, data)
         return element_nonelastic_total_xs(
             E, element, data
-        ) + element_gfp2_transition_total_xs(E, element, mcdc, data)
+        ) + element_elastic_state0_total_xs_gfp2(E, element, mcdc, data)
 
     if reaction_type == ELECTRON_REACTION_ELASTIC_SCATTERING:
         if gfp2_state == ELECTRON_GFP2_STATE_1:
             return element_gfp2_state1_total_xs(E, element, mcdc, data)
-        return element_gfp2_transition_total_xs(E, element, mcdc, data)
+        return element_elastic_state0_total_xs_gfp2(E, element, mcdc, data)
 
     return total_micro_xs(reaction_type, E, element, data)
 
@@ -208,9 +258,12 @@ def collision(particle_container, collision_data_container, mcdc, data):
     collision_data = collision_data_container[0]
     material = mcdc["native_materials"][particle["material_ID"]]
     elastic_mode = mcdc["settings"]["electron_elastic_mode"]
+    gfp2_scheme = mcdc["settings"]["electron_gfp2_scheme"]
 
+    # Particle properties
     E = particle["E"]
 
+    # Check for cutoff energy
     if E <= ELECTRON_CUTOFF_ENERGY:
         collision_data["energy_deposition"] += E * particle["w"]
         particle["alive"] = False
@@ -226,6 +279,10 @@ def collision(particle_container, collision_data_container, mcdc, data):
         )
         return
 
+    # ==================================================================================
+    # Sample colliding element
+    # ==================================================================================
+
     SigmaT = macro_xs(ELECTRON_REACTION_TOTAL, particle_container, mcdc, data)
 
     xi = rng.lcg(particle_container) * SigmaT
@@ -233,9 +290,12 @@ def collision(particle_container, collision_data_container, mcdc, data):
     for i in range(material["N_element"]):
         element_ID = int(mcdc_get.native_material.element_IDs(i, material, data))
         element = mcdc["elements"][element_ID]
-        element_density = mcdc_get.native_material.element_densities(i, material, data)
 
-        if elastic_mode == ELECTRON_ELASTIC_MODE_GFP2:
+        element_density = mcdc_get.native_material.element_densities(i, material, data)
+        if (
+            elastic_mode == ELECTRON_ELASTIC_MODE_GFP2
+            and gfp2_scheme == ELECTRON_GFP2_SCHEME_KERNEL
+        ):
             sigmaT = total_micro_xs_gfp2(
                 ELECTRON_REACTION_TOTAL,
                 E,
@@ -248,12 +308,20 @@ def collision(particle_container, collision_data_container, mcdc, data):
             sigmaT = total_micro_xs(ELECTRON_REACTION_TOTAL, E, element, data)
 
         total += element_density * sigmaT
+
         if total > xi:
             break
 
+    # ==================================================================================
+    # Sample and perform reaction
+    # ==================================================================================
+
     sigma_ionization = total_micro_xs(ELECTRON_REACTION_IONIZATION, E, element, data)
-    if elastic_mode == ELECTRON_ELASTIC_MODE_GFP2:
-        sigma_elastic = element_gfp2_transition_total_xs(E, element, mcdc, data)
+    if (
+        elastic_mode == ELECTRON_ELASTIC_MODE_GFP2
+        and gfp2_scheme == ELECTRON_GFP2_SCHEME_KERNEL
+    ):
+        sigma_elastic = element_elastic_state0_total_xs_gfp2(E, element, mcdc, data)
     else:
         sigma_elastic = total_micro_xs(
             ELECTRON_REACTION_ELASTIC_SCATTERING, E, element, data
@@ -266,6 +334,7 @@ def collision(particle_container, collision_data_container, mcdc, data):
     xi = rng.lcg(particle_container) * sigmaT
     total = 0.0
 
+    # Ionization
     total += sigma_ionization
     if xi < total:
         total -= sigma_ionization
@@ -290,6 +359,7 @@ def collision(particle_container, collision_data_container, mcdc, data):
                 )
                 return
 
+    # Elastic scattering
     total += sigma_elastic
     if xi < total:
         total -= sigma_elastic
@@ -300,16 +370,28 @@ def collision(particle_container, collision_data_container, mcdc, data):
                 )
             )
             reaction = mcdc["electron_elastic_scattering_reactions"][reaction_ID]
+            use_gfp2 = (
+                elastic_mode == ELECTRON_ELASTIC_MODE_GFP2
+                and reaction_gfp2_enabled(E, reaction, mcdc, data)
+            )
 
-            if elastic_mode == ELECTRON_ELASTIC_MODE_GFP2:
-                total += gfp2_transition_rate_xs(E, reaction, mcdc, data)
+            if (
+                elastic_mode == ELECTRON_ELASTIC_MODE_GFP2
+                and gfp2_scheme == ELECTRON_GFP2_SCHEME_KERNEL
+            ):
+                if use_gfp2:
+                    total += gfp2_transition_rate_xs(E, reaction, mcdc, data)
+                else:
+                    reaction_base_ID = reaction["parent_ID"]
+                    reaction_base = mcdc["electron_reactions"][reaction_base_ID]
+                    total += reaction_micro_xs(E, reaction_base, element, data)
             else:
                 reaction_base_ID = reaction["parent_ID"]
                 reaction_base = mcdc["electron_reactions"][reaction_base_ID]
                 total += reaction_micro_xs(E, reaction_base, element, data)
 
             if xi < total:
-                if elastic_mode == ELECTRON_ELASTIC_MODE_GFP2:
+                if use_gfp2:
                     particle["g"] = ELECTRON_GFP2_STATE_1
                     gfp2_state1_relaxation(
                         particle_container,
@@ -324,6 +406,7 @@ def collision(particle_container, collision_data_container, mcdc, data):
                     )
                 return
 
+    # Bremsstrahlung
     total += sigma_bremsstrahlung
     if xi < total:
         total -= sigma_bremsstrahlung
@@ -342,6 +425,7 @@ def collision(particle_container, collision_data_container, mcdc, data):
                 )
                 return
 
+    # Excitation
     total += sigma_excitation
     if xi < total:
         total -= sigma_excitation
@@ -370,34 +454,59 @@ def collision(particle_container, collision_data_container, mcdc, data):
 def elastic_scattering(reaction, particle_container, element, mcdc, data):
     particle = particle_container[0]
 
+    # Current energy
     E = particle["E"]
     Z = int(element["atomic_number"])
     mu_cut = float(reaction["mu_cut"])
 
+    # -------------------------------------------------------------------------
+    # Total elastic xs
+    # -------------------------------------------------------------------------
+
     reaction_base_ID = int(reaction["parent_ID"])
     reaction_base = mcdc["electron_reactions"][reaction_base_ID]
     xs_total = reaction_micro_xs(E, reaction_base, element, data)
+
+    # If large-angle, xs from data table
     xs_large = elastic_large_xs(E, reaction, mcdc, data)
 
+    # -------------------------------------------------------------------------
+    # Sample elastic scattering cosine according to the selected method
+    # -------------------------------------------------------------------------
     elastic_mode = mcdc["settings"]["electron_elastic_mode"]
-
     if elastic_mode == ELECTRON_ELASTIC_MODE_DECOUPLED:
+        xi = rng.lcg(particle_container) * xs_total
+        if xi < xs_large:
+            # Large-angle: sample from EEDL table
+            multi_table = mcdc["multi_table_distributions"][reaction["mu_ID"]]
+            mu0 = sample_multi_table_cdf(E, particle_container, multi_table, data)
+        else:
+            # Small-angle: analytical SR CDF inversion over [mu_cut, 1]
+            mu0 = sample_small_angle_mu_coulomb(E, Z, particle_container, mu_cut)
+    elif elastic_mode == ELECTRON_ELASTIC_MODE_COUPLED:
+        multi_table = mcdc["multi_table_distributions"][reaction["mu_coupled_ID"]]
+        mu0 = sample_multi_table_cdf(E, particle_container, multi_table, data)
+    elif elastic_mode == ELECTRON_ELASTIC_MODE_GFP2:
         xi = rng.lcg(particle_container) * xs_total
         if xi < xs_large:
             multi_table = mcdc["multi_table_distributions"][reaction["mu_ID"]]
             mu0 = sample_multi_table_cdf(E, particle_container, multi_table, data)
         else:
             mu0 = sample_small_angle_mu_coulomb(E, Z, particle_container, mu_cut)
-    elif elastic_mode == ELECTRON_ELASTIC_MODE_COUPLED:
-        multi_table = mcdc["multi_table_distributions"][reaction["mu_coupled_ID"]]
-        mu0 = sample_multi_table_cdf(E, particle_container, multi_table, data)
     else:
-        mu0 = 1.0
+        xi = rng.lcg(particle_container) * xs_total
+        if xi < xs_large:
+            multi_table = mcdc["multi_table_distributions"][reaction["mu_ID"]]
+            mu0 = sample_multi_table_cdf(E, particle_container, multi_table, data)
+        else:
+            mu0 = sample_small_angle_mu_coulomb(E, Z, particle_container, mu_cut)
 
+    # Update direction
     azi = 2.0 * PI * rng.lcg(particle_container)
-    ux_new, uy_new, uz_new = scatter_direction(
-        particle["ux"], particle["uy"], particle["uz"], mu0, azi
-    )
+    ux = particle["ux"]
+    uy = particle["uy"]
+    uz = particle["uz"]
+    ux_new, uy_new, uz_new = scatter_direction(ux, uy, uz, mu0, azi)
 
     particle["ux"] = ux_new
     particle["uy"] = uy_new
@@ -416,6 +525,25 @@ def compute_scattering_eta(E, Z):
     rel = math.sqrt(tau / (tau + 1.0))
 
     return 0.25 * (r * r) * z_sq * bracket * rel
+
+
+@njit
+def sr_cdf(mu, eta):
+    """
+    Screened Rutherford CDF: fraction of events with scattering cosine < mu.
+
+    F(mu) = [1/eta - 1/(1-mu+2*eta)] / [1/eta - 1/(2+2*eta)]
+    """
+    num = (1.0 / eta) - 1.0 / (1.0 - mu + 2.0 * eta)
+    denom = (1.0 / eta) - 1.0 / (2.0 + 2.0 * eta)
+    if denom == 0.0:
+        return 1.0
+    result = num / denom
+    if result < 0.0:
+        return 0.0
+    if result > 1.0:
+        return 1.0
+    return result
 
 
 @njit
@@ -454,7 +582,6 @@ def gfp2_state1_collision(
     total = 0.0
     sigmaT = 0.0
     element = mcdc["elements"][0]
-
     for i in range(material["N_element"]):
         element_ID = int(mcdc_get.native_material.element_IDs(i, material, data))
         element = mcdc["elements"][element_ID]
@@ -464,14 +591,20 @@ def gfp2_state1_collision(
         if total > xi:
             break
 
+    if sigmaT <= 0.0:
+        particle["g"] = ELECTRON_GFP2_STATE_0
+        return
+
     xi = rng.lcg(particle_container) * sigmaT
     total = 0.0
-
     for i in range(element["N_electron_elastic_scattering_reaction"]):
         reaction_ID = int(
             mcdc_get.element.electron_elastic_scattering_reaction_IDs(i, element, data)
         )
         reaction = mcdc["electron_elastic_scattering_reactions"][reaction_ID]
+
+        if not reaction_gfp2_enabled(E, reaction, mcdc, data):
+            continue
 
         total += gfp2_sigma_delta0_xs(E, reaction, mcdc, data)
         if xi < total:
@@ -492,6 +625,8 @@ def gfp2_state1_relaxation(
 ):
     particle = particle_container[0]
 
+    # State-1 has no streaming or slowing-down, so we can resolve its local
+    # scatter/transition chain before returning control to the transport loop.
     while particle["alive"] and particle["g"] == ELECTRON_GFP2_STATE_1:
         gfp2_state1_collision(
             particle_container, collision_data_container, material, mcdc, data
@@ -593,8 +728,10 @@ def ionization(
     particle = particle_container[0]
     collision_data = collision_data_container[0]
 
+    # Current energy
     E = particle["E"]
 
+    # Sample subshell
     N = int(reaction["N_subshell"])
     xs_vals = np.empty(N, dtype=np.float64)
 
@@ -603,10 +740,12 @@ def ionization(
             mcdc_get.electron_ionization_reaction.subshell_x_IDs(i, reaction, data)
         )
         xs_sub_table = mcdc["data"][xs_sub_ID]
-        xs_vals[i] = evaluate_data(E, xs_sub_table, mcdc, data)
+        xs_sub_i = evaluate_data(E, xs_sub_table, mcdc, data)
+        xs_vals[i] = xs_sub_i
 
     xi = rng.lcg(particle_container) * sigma_ionization
     total_acc = 0.0
+    # If shell sums miss the total slightly, fall back to the last shell.
     chosen = N - 1
     for i in range(N):
         total_acc += xs_vals[i]
@@ -614,6 +753,7 @@ def ionization(
             chosen = i
             break
 
+    # Binding energy
     B = mcdc_get.element.electron_ionization_subshell_binding_energy(
         chosen, element, data
     )
@@ -623,6 +763,7 @@ def ionization(
         particle["E"] = 0.0
         return
 
+    # Sample secondary energy
     dist_ID = int(
         mcdc_get.electron_ionization_reaction.subshell_product_IDs(
             chosen, reaction, data
@@ -633,6 +774,7 @@ def ionization(
         E, dist_base, particle_container, mcdc, data, scale=False
     )
 
+    # Primary outgoing energy
     E_out = E - B - T_delta
     particle["E"] = E_out
 
@@ -649,10 +791,12 @@ def ionization(
         collision_data["energy_deposition"] += T_delta * particle["w"]
         return
 
+    # Sample delta direction
     ux_delta, uy_delta, uz_delta = sample_delta_direction(
         T_delta, E, particle_container
     )
 
+    # Momentum conservation if primary survives
     if primary_alive_after:
         p_before = math.sqrt(E * (E + 2.0 * ELECTRON_MASS))
         p_delta = math.sqrt(T_delta * (T_delta + 2.0 * ELECTRON_MASS))
@@ -661,10 +805,12 @@ def ionization(
         uy_before = particle["uy"]
         uz_before = particle["uz"]
 
+        # Momentum vectors after collision
         px_after = p_before * ux_before - p_delta * ux_delta
         py_after = p_before * uy_before - p_delta * uy_delta
         pz_after = p_before * uz_before - p_delta * uz_delta
 
+        # Normalize and set primary's new direction
         norm_sq = px_after * px_after + py_after * py_after + pz_after * pz_after
         if norm_sq > 0.0:
             norm = math.sqrt(norm_sq)
@@ -672,6 +818,7 @@ def ionization(
             particle["uy"] = py_after / norm
             particle["uz"] = pz_after / norm
 
+    # Add secondary particle to bank
     particle_container_new = np.zeros(1, type_.particle_data)
     particle_new = particle_container_new[0]
     particle_module.copy_as_child(particle_container_new, particle_container)
