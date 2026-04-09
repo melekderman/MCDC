@@ -36,6 +36,11 @@ from mcdc.transport.distribution import (
 )
 from mcdc.transport.distribution import sample_distribution, sample_multi_table_cdf
 
+from mcdc.transport.physics.util import (
+    evaluate_electron_xs_energy_grid,
+    scatter_direction,
+)
+
 from mcdc.transport.util import linear_interpolation
 
 # ======================================================================================
