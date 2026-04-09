@@ -12,7 +12,7 @@ ENERGY = 1e6  # eV
 CSDA_RANGE = 0.569  # g/cm2
 ANGLE = 0.0
 
-N_PARTICLES = 10
+N_PARTICLES = 1000
 z0 = 0.0
 
 RHO_G_CM3 = 2.70  # g/cm3
