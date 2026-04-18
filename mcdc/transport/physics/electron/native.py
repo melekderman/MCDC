@@ -461,9 +461,8 @@ def ionization(
     # Current energy
     E = particle["E"]
 
-    # Sample subshell
+    # Sample subshell with two-pass CDF (avoids per-call heap allocation)
     N = int(reaction["N_subshell"])
-    xs_vals = np.empty(N, dtype=np.float64)
 
     total = 0.0
     for i in range(N):
@@ -471,15 +470,17 @@ def ionization(
             mcdc_get.electron_ionization_reaction.subshell_x_IDs(i, reaction, data)
         )
         xs_sub_table = simulation["data"][xs_sub_ID]
-        xs_sub_i = evaluate_data(E, xs_sub_table, simulation, data)
-        xs_vals[i] = xs_sub_i
-        total += xs_sub_i
+        total += evaluate_data(E, xs_sub_table, simulation, data)
 
     xi = rng.lcg(particle_container) * total
     total_acc = 0.0
     chosen = 0
     for i in range(N):
-        total_acc += xs_vals[i]
+        xs_sub_ID = int(
+            mcdc_get.electron_ionization_reaction.subshell_x_IDs(i, reaction, data)
+        )
+        xs_sub_table = simulation["data"][xs_sub_ID]
+        total_acc += evaluate_data(E, xs_sub_table, simulation, data)
         if total_acc >= xi:
             chosen = i
             break
