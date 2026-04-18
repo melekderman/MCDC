@@ -107,6 +107,19 @@ def reaction_micro_xs(E, reaction_base, element, data):
     return linear_interpolation(E, E0, E1, xs0, xs1)
 
 
+@njit
+def reaction_micro_xs_cached(idx, E, E0, E1, reaction_base, data):
+    # Same as reaction_micro_xs but reuses a pre-computed energy-grid index
+    offset = reaction_base["xs_offset_"]
+    if idx < offset:
+        return 0.0
+
+    idx_local = idx - offset
+    xs0 = mcdc_get.electron_reaction.xs(idx_local, reaction_base, data)
+    xs1 = mcdc_get.electron_reaction.xs(idx_local + 1, reaction_base, data)
+    return linear_interpolation(E, E0, E1, xs0, xs1)
+
+
 # ======================================================================================
 # Collision
 # ======================================================================================
@@ -186,7 +199,7 @@ def collision(particle_container, collision_data_container, program, data):
             reaction = simulation["electron_ionization_reactions"][reaction_ID]
             reaction_base_ID = reaction["parent_ID"]
             reaction_base = simulation["electron_reactions"][reaction_base_ID]
-            total += reaction_micro_xs(E, reaction_base, element, data)
+            total += reaction_micro_xs_cached(idx, E, E0, E1, reaction_base, data)
 
             if xi < total:
                 ionization(
@@ -212,7 +225,7 @@ def collision(particle_container, collision_data_container, program, data):
             reaction = simulation["electron_elastic_scattering_reactions"][reaction_ID]
             reaction_base_ID = reaction["parent_ID"]
             reaction_base = simulation["electron_reactions"][reaction_base_ID]
-            total += reaction_micro_xs(E, reaction_base, element, data)
+            total += reaction_micro_xs_cached(idx, E, E0, E1, reaction_base, data)
 
             if xi < total:
                 elastic_scattering(
@@ -231,7 +244,7 @@ def collision(particle_container, collision_data_container, program, data):
             reaction = simulation["electron_bremsstrahlung_reactions"][reaction_ID]
             reaction_base_ID = reaction["parent_ID"]
             reaction_base = simulation["electron_reactions"][reaction_base_ID]
-            total += reaction_micro_xs(E, reaction_base, element, data)
+            total += reaction_micro_xs_cached(idx, E, E0, E1, reaction_base, data)
 
             if xi < total:
                 bremsstrahlung(
@@ -254,7 +267,7 @@ def collision(particle_container, collision_data_container, program, data):
             reaction = simulation["electron_excitation_reactions"][reaction_ID]
             reaction_base_ID = reaction["parent_ID"]
             reaction_base = simulation["electron_reactions"][reaction_base_ID]
-            total += reaction_micro_xs(E, reaction_base, element, data)
+            total += reaction_micro_xs_cached(idx, E, E0, E1, reaction_base, data)
 
             if xi < total:
                 excitation(
