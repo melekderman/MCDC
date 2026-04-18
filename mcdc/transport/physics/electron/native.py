@@ -153,14 +153,24 @@ def collision(particle_container, collision_data_container, program, data):
     # Sample and perform reaction
     # ==================================================================================
 
-    sigma_ionization = total_micro_xs(ELECTRON_REACTION_IONIZATION, E, element, data)
-    sigma_elastic = total_micro_xs(
-        ELECTRON_REACTION_ELASTIC_SCATTERING, E, element, data
-    )
-    sigma_bremsstrahlung = total_micro_xs(
-        ELECTRON_REACTION_BREMSSTRAHLUNG, E, element, data
-    )
-    sigma_excitation = total_micro_xs(ELECTRON_REACTION_EXCITATION, E, element, data)
+    # Cache the selected element's energy-grid indices; reused for all reaction types
+    idx, E0, E1 = evaluate_electron_xs_energy_grid(E, element, data)
+
+    xs0 = mcdc_get.element.electron_ionization_xs(idx, element, data)
+    xs1 = mcdc_get.element.electron_ionization_xs(idx + 1, element, data)
+    sigma_ionization = linear_interpolation(E, E0, E1, xs0, xs1)
+
+    xs0 = mcdc_get.element.electron_elastic_xs(idx, element, data)
+    xs1 = mcdc_get.element.electron_elastic_xs(idx + 1, element, data)
+    sigma_elastic = linear_interpolation(E, E0, E1, xs0, xs1)
+
+    xs0 = mcdc_get.element.electron_bremsstrahlung_xs(idx, element, data)
+    xs1 = mcdc_get.element.electron_bremsstrahlung_xs(idx + 1, element, data)
+    sigma_bremsstrahlung = linear_interpolation(E, E0, E1, xs0, xs1)
+
+    xs0 = mcdc_get.element.electron_excitation_xs(idx, element, data)
+    xs1 = mcdc_get.element.electron_excitation_xs(idx + 1, element, data)
+    sigma_excitation = linear_interpolation(E, E0, E1, xs0, xs1)
 
     xi = rng.lcg(particle_container) * sigmaT
     total = 0.0
