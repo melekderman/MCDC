@@ -146,20 +146,27 @@ def collision(particle_container, collision_data_container, program, data):
     # Sample colliding element
     # ==================================================================================
 
-    SigmaT = macro_xs(ELECTRON_REACTION_TOTAL, particle_container, simulation, data)
-
-    xi = rng.lcg(particle_container) * SigmaT
-    total = 0.0
-    for i in range(material["N_element"]):
+    # First pass: accumulate element sigmas and macroscopic total
+    N_elem = material["N_element"]
+    sigmas = np.empty(N_elem, dtype=np.float64)
+    densities = np.empty(N_elem, dtype=np.float64)
+    SigmaT = 0.0
+    for i in range(N_elem):
         element_ID = int(mcdc_get.native_material.element_IDs(i, material, data))
         element = simulation["elements"][element_ID]
+        densities[i] = mcdc_get.native_material.element_densities(i, material, data)
+        sigmas[i] = total_micro_xs(ELECTRON_REACTION_TOTAL, E, element, data)
+        SigmaT += densities[i] * sigmas[i]
 
-        element_density = mcdc_get.native_material.element_densities(i, material, data)
-        sigmaT = total_micro_xs(ELECTRON_REACTION_TOTAL, E, element, data)
-
-        total += element_density * sigmaT
-
+    # Second pass: pick the colliding element from the stored CDF
+    xi = rng.lcg(particle_container) * SigmaT
+    total = 0.0
+    for i in range(N_elem):
+        total += densities[i] * sigmas[i]
         if total > xi:
+            element_ID = int(mcdc_get.native_material.element_IDs(i, material, data))
+            element = simulation["elements"][element_ID]
+            sigmaT = sigmas[i]
             break
 
     # ==================================================================================
