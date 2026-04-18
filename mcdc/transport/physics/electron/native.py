@@ -364,8 +364,9 @@ def sample_small_angle_mu_coulomb(E, Z, rng_state, mu_cut):
     x_cut = 1.0 - mu_cut
     u = rng.lcg(rng_state)
 
-    denom = (1.0 / eta) - (1.0 / (eta + x_cut))
-    inv = (1.0 / eta) - u * denom
+    inv_eta = 1.0 / eta
+    denom = inv_eta - (1.0 / (eta + x_cut))
+    inv = inv_eta - u * denom
     x = (1.0 / inv) - eta
 
     return 1.0 - x
