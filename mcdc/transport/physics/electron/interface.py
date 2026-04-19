@@ -14,6 +14,11 @@ def particle_speed(particle_container, simulation, data):
     return native.particle_speed(particle_container)
 
 
+@njit
+def collision_distance(particle_container, simulation, data):
+    return native.collision_distance(particle_container, simulation, data)
+
+
 # ======================================================================================
 # Material properties
 # ======================================================================================

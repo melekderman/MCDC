@@ -64,7 +64,7 @@ def collision_distance(particle_container, simulation, data):
     if particle["particle_type"] == PARTICLE_NEUTRON:
         SigmaT = macro_xs(NEUTRON_REACTION_TOTAL, particle_container, simulation, data)
     elif particle["particle_type"] == PARTICLE_ELECTRON:
-        SigmaT = macro_xs(ELECTRON_REACTION_TOTAL, particle_container, simulation, data)
+        return electron.collision_distance(particle_container, simulation, data)
 
     # Vacuum material?
     if SigmaT == 0.0:

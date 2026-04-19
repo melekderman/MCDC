@@ -15,7 +15,9 @@ from mcdc.constant import (
     REFERENCE_FRAME_LAB,
 )
 from mcdc.object_.base import ObjectPolymorphic
-from mcdc.object_.data import DataBase, DataTable
+import numpy as np
+
+from mcdc.object_.data import DataBase, DataNone, DataTable
 from mcdc.object_.distribution import DistributionBase, DistributionMultiTable
 from mcdc.print_ import print_1d_array
 
@@ -180,6 +182,10 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
     mu_cut: float
     xs_large: DataBase
     mu: DistributionMultiTable
+    mu_coupled: DistributionMultiTable
+    gfp2_mu_star: float
+    gfp2_transition_rate: DataBase
+    gfp2_sigma_delta0: DataBase
 
     def __init__(
         self,
@@ -189,28 +195,68 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
         reference_frame,
         xs_large,
         mu,
+        mu_coupled,
+        gfp2_mu_star,
+        gfp2_transition_rate,
+        gfp2_sigma_delta0,
     ):
         type_ = ELECTRON_REACTION_ELASTIC_SCATTERING
         super().__init__(type_, MT, xs, xs_offset, reference_frame)
         self.mu_cut = MU_CUTOFF
         self.xs_large = xs_large
         self.mu = mu
+        self.mu_coupled = mu_coupled
+        self.gfp2_mu_star = gfp2_mu_star
+        self.gfp2_transition_rate = gfp2_transition_rate
+        self.gfp2_sigma_delta0 = gfp2_sigma_delta0
 
     @classmethod
     def from_h5_group(cls, h5_group):
         MT, xs, xs_offset, reference_frame = set_basic_properties(h5_group)
 
-        large_angle = h5_group["large_angle"]
-        xs_large = DataTable(large_angle["xs_energy"][()], large_angle["xs"][()])
-        mu = load_multi_table_distribution(large_angle["scattering_cosine"])
+        if "large_angle" in h5_group:
+            large_angle = h5_group["large_angle"]
+            xs_large = DataTable(large_angle["xs_energy"][()], large_angle["xs"][()])
+            mu = load_multi_table_distribution(large_angle["scattering_cosine"])
+        else:
+            xs_large = DataTable(h5_group["xs_energy"][()], h5_group["xs_large"][()])
+            mu = load_multi_table_distribution(h5_group["scattering_cosine"])
 
-        return cls(MT, xs, xs_offset, reference_frame, xs_large, mu)
+        if "scattering_cosine_coupled" in h5_group:
+            mu_coupled = load_multi_table_distribution(h5_group["scattering_cosine_coupled"])
+        else:
+            mu_coupled = mu
+
+        gfp2_mu_star = 0.0
+        gfp2_transition_rate = DataNone()
+        gfp2_sigma_delta0 = DataNone()
+        if "gfp2" in h5_group:
+            g = h5_group["gfp2"]
+            energy_grid = g["energy_grid"][()]
+            gfp2_mu_star = float(np.asarray(g["mu_star"][()]).ravel()[0])
+            gfp2_transition_rate = DataTable(energy_grid, g["transition_rate"][()])
+            gfp2_sigma_delta0 = DataTable(energy_grid, g["Sigma_delta0"][()])
+
+        return cls(
+            MT,
+            xs,
+            xs_offset,
+            reference_frame,
+            xs_large,
+            mu,
+            mu_coupled,
+            gfp2_mu_star,
+            gfp2_transition_rate,
+            gfp2_sigma_delta0,
+        )
 
     def __repr__(self):
         text = super().__repr__()
         text += f"  - Mu cut: {self.mu_cut}\n"
         text += f"  - Large angle XS: DataTable [ID: {self.xs_large.ID}]\n"
         text += f"  - Scattering cosine: {distribution.decode_type(self.mu.type)} [ID: {self.mu.ID}]\n"
+        text += f"  - Coupled scattering cosine: {distribution.decode_type(self.mu_coupled.type)} [ID: {self.mu_coupled.ID}]\n"
+        text += f"  - GFP2 mu_star: {self.gfp2_mu_star}\n"
         return text
 
 
@@ -285,9 +331,12 @@ def set_basic_properties(h5_group):
     MT = h5_group.attrs["MT"][()]
     xs = h5_group["xs"][()]
     xs_offset = h5_group["xs"].attrs["offset"]
-    reference_frame = h5_group["reference_frame"][()].decode("utf-8")
-    if reference_frame == "LAB":
-        reference_frame = REFERENCE_FRAME_LAB
-    elif reference_frame == "COM":
-        reference_frame = REFERENCE_FRAME_COM
+    reference_frame = h5_group["reference_frame"][()]
+    if isinstance(reference_frame, bytes):
+        reference_frame = reference_frame.decode("utf-8")
+    if isinstance(reference_frame, str):
+        if reference_frame == "LAB":
+            reference_frame = REFERENCE_FRAME_LAB
+        elif reference_frame == "COM":
+            reference_frame = REFERENCE_FRAME_COM
     return MT, xs, xs_offset, reference_frame

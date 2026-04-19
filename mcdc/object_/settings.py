@@ -72,6 +72,11 @@ class Settings(ObjectSingleton):
     gpu_async_type: int = GPU_ASYNC_SIMPLE
     gpu_storage: int = GPU_STORAGE_SEPARATE
 
+    # Electron elastic scattering mode
+    electron_elastic_mode: int = ELECTRON_ELASTIC_MODE_COUPLED
+    electron_gfp2_policy: int = ELECTRON_GFP2_POLICY_PURE
+    electron_gfp2_scheme: int = ELECTRON_GFP2_SCHEME_KERNEL
+
     def __post_init__(self):
         super().__init__()
 
@@ -163,3 +168,59 @@ class Settings(ObjectSingleton):
                 self.proton_transport = True
             else:
                 print_error(r"Unsupported particle types: {particle}")
+
+    def set_electron_elastic_mode(self, mode):
+        if isinstance(mode, str):
+            mode_key = mode.strip().lower()
+            mapping = {
+                "decoupled": ELECTRON_ELASTIC_MODE_DECOUPLED,
+                "coupled": ELECTRON_ELASTIC_MODE_COUPLED,
+                "gfp2": ELECTRON_ELASTIC_MODE_GFP2,
+            }
+            if mode_key not in mapping:
+                print_error("Unknown electron elastic mode")
+            mode = mapping[mode_key]
+
+        if mode not in (
+            ELECTRON_ELASTIC_MODE_DECOUPLED,
+            ELECTRON_ELASTIC_MODE_COUPLED,
+            ELECTRON_ELASTIC_MODE_GFP2,
+        ):
+            print_error("Unknown electron elastic mode")
+
+        self.electron_elastic_mode = mode
+
+    def set_electron_gfp2_policy(self, policy):
+        if isinstance(policy, str):
+            policy_key = policy.strip().lower()
+            mapping = {
+                "pure": ELECTRON_GFP2_POLICY_PURE,
+                "regime": ELECTRON_GFP2_POLICY_REGIME,
+            }
+            if policy_key not in mapping:
+                print_error("Unknown electron GFP2 policy")
+            policy = mapping[policy_key]
+
+        if policy not in (ELECTRON_GFP2_POLICY_PURE, ELECTRON_GFP2_POLICY_REGIME):
+            print_error("Unknown electron GFP2 policy")
+
+        self.electron_gfp2_policy = policy
+
+    def set_electron_gfp2_scheme(self, scheme):
+        if isinstance(scheme, str):
+            scheme_key = scheme.strip().lower()
+            mapping = {
+                "kernel": ELECTRON_GFP2_SCHEME_KERNEL,
+                "elastic_only": ELECTRON_GFP2_SCHEME_ELASTIC_ONLY,
+            }
+            if scheme_key not in mapping:
+                print_error("Unknown electron GFP2 scheme")
+            scheme = mapping[scheme_key]
+
+        if scheme not in (
+            ELECTRON_GFP2_SCHEME_KERNEL,
+            ELECTRON_GFP2_SCHEME_ELASTIC_ONLY,
+        ):
+            print_error("Unknown electron GFP2 scheme")
+
+        self.electron_gfp2_scheme = scheme

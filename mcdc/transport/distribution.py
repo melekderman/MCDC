@@ -239,6 +239,11 @@ def sample_multi_table(E, rng_state, multi_table, data):
 
 
 @njit
+def sample_multi_table_cdf(E, rng_state, multi_table, data):
+    return _sample_multi_table(E, rng_state, multi_table, data, False)
+
+
+@njit
 def _sample_multi_table(E, rng_state, multi_table, data, scale):
     offset = multi_table["grid_offset"]
     length = multi_table["grid_length"]

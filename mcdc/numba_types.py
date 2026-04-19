@@ -298,6 +298,10 @@ electron_elastic_scattering_reaction = into_dtype([
     ('mu_cut', float64),
     ('xs_large_ID', int64),
     ('mu_ID', int64),
+    ('mu_coupled_ID', int64),
+    ('gfp2_mu_star', float64),
+    ('gfp2_transition_rate_ID', int64),
+    ('gfp2_sigma_delta0_ID', int64),
     ('ID', int64),
     ('parent_ID', int64),
 ])
@@ -559,6 +563,9 @@ settings = into_dtype([
     ('gpu_strategy', int64),
     ('gpu_async_type', int64),
     ('gpu_storage', int64),
+    ('electron_elastic_mode', int64),
+    ('electron_gfp2_policy', int64),
+    ('electron_gfp2_scheme', int64),
 ])
 
 implicit_capture = into_dtype([
@@ -861,4 +868,3 @@ def set_simulation(N: dict):
         ('runtime_bank_management', float64),
         ('source_seed', int64),
     ])
-
