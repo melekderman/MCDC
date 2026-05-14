@@ -67,6 +67,9 @@ class Settings(ObjectSingleton):
     neutron_multigroup_mode: bool = False
     neutron_eigenvalue_mode: bool = False
 
+    # Neutron fission emission model
+    fission_emission_model: int = FISSION_EMISSION_ENDF
+
     # GPU mode
     gpu_strategy: int = GPU_STRATEGY_ASYNC
     gpu_async_type: int = GPU_ASYNC_SIMPLE
@@ -163,3 +166,12 @@ class Settings(ObjectSingleton):
                 self.proton_transport = True
             else:
                 print_error(r"Unsupported particle types: {particle}")
+
+
+    def set_fission_emission_model(self, model):
+        if model == "endf":
+            self.fission_emission_model = FISSION_EMISSION_ENDF
+        elif model == "cgmf":
+            self.fission_emission_model = FISSION_EMISSION_CGMF
+        else:
+            print_error("Unknown fission emission model")
