@@ -281,4 +281,3 @@ def _mass_number_from_name(nuclide_name):
         print_error(f"Cannot infer mass number from nuclide name: {nuclide_name}")
         return 0
     return int(digits)
-

@@ -8,6 +8,7 @@ import mcdc.mcdc_get as mcdc_get
 import mcdc.numba_types as type_
 import mcdc.transport.particle as particle_module
 import mcdc.transport.particle_bank as particle_bank_module
+import mcdc.transport.physics.neutron.cgmf as cgmf_module
 import mcdc.transport.rng as rng
 import mcdc.transport.util as util
 
@@ -48,6 +49,29 @@ from mcdc.transport.util import find_bin, linear_interpolation
 # event. Sizes the per-fission scratch buffer; the buffer is refilled (with
 # another correlated event) if more secondaries are requested.
 CGMF_MAX_PROMPT_NEUTRONS = 32
+
+
+@njit
+def fill_cgmf_event(
+    zaid,
+    E,
+    cgmf_count,
+    cgmf_energies,
+    cgmf_cosu,
+    cgmf_cosv,
+    cgmf_cosw,
+):
+    with objmode():
+        cgmf_module.fill_event(
+            zaid,
+            E,
+            cgmf_count,
+            cgmf_energies,
+            cgmf_cosu,
+            cgmf_cosv,
+            cgmf_cosw,
+        )
+
 
 # ======================================================================================
 # Particle attributes
@@ -830,18 +854,15 @@ def fission(
     zaid = 0
     if use_cgmf:
         zaid = 1000 * nuclide["atomic_number"] + nuclide["mass_number"]
-        with objmode():
-            from mcdc.transport.physics.neutron import cgmf as cgmf_module
-
-            cgmf_module.fill_event(
-                zaid,
-                E,
-                cgmf_count,
-                cgmf_energies,
-                cgmf_cosu,
-                cgmf_cosv,
-                cgmf_cosw,
-            )
+        fill_cgmf_event(
+            zaid,
+            E,
+            cgmf_count,
+            cgmf_energies,
+            cgmf_cosu,
+            cgmf_cosv,
+            cgmf_cosw,
+        )
 
     # Set up secondary partice container
     particle_container_new = util.local_array(1, type_.particle_data)
@@ -880,18 +901,15 @@ def fission(
             if use_cgmf:
                 # Refill the buffer with a new correlated event if exhausted
                 if cgmf_idx >= cgmf_count[0]:
-                    with objmode():
-                        from mcdc.transport.physics.neutron import cgmf as cgmf_module
-
-                        cgmf_module.fill_event(
-                            zaid,
-                            E,
-                            cgmf_count,
-                            cgmf_energies,
-                            cgmf_cosu,
-                            cgmf_cosv,
-                            cgmf_cosw,
-                        )
+                    fill_cgmf_event(
+                        zaid,
+                        E,
+                        cgmf_count,
+                        cgmf_energies,
+                        cgmf_cosu,
+                        cgmf_cosv,
+                        cgmf_cosw,
+                    )
                     cgmf_idx = 0
 
                 particle_new["E"] = cgmf_energies[cgmf_idx]

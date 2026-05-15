@@ -10,7 +10,7 @@ import numpy as np
 #
 # Optional dependency: cgmfwrap (https://github.com/melekderman/cgmfwrap) - TEMPORARYLY.
 # TODO: Remove this module and the cgmfwrap dependency once CGMF support is implemented
-# directly in C++ and exposed through pybind11, so that CGMF sampling can be used from 
+# directly in C++ and exposed through pybind11, so that CGMF sampling can be used from
 # the Numba transport kernel without `objmode` and without the overhead of a Python callback.
 # Set CGMFWRAP_PATH to the directory containing the built cgmfwrap module,
 # unless it is already importable from the active Python environment.
