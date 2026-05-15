@@ -34,9 +34,9 @@ def _load_cgmfwrap():
     except ImportError as exc:
         raise RuntimeError(
             "CGMF emission requested, but cgmfwrap could not be imported. "
-            "Build cgmfwrap (https://github.com/melekderman/cgmfwrap) and "
-            "either install it into the active environment or set "
-            "CGMFWRAP_PATH to its build directory."
+            "Install it with `pip install .` from "
+            "https://github.com/melekderman/cgmfwrap, or set CGMFWRAP_PATH "
+            "to a directory that contains a built cgmfwrap package."
         ) from exc
 
     return _CGMFWRAP
