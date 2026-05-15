@@ -323,8 +323,8 @@ electron_ionization_reaction = into_dtype([
 
 element = into_dtype([
     ('name', 'U32'),
-    ('atomic_weight_ratio', float64),
     ('atomic_number', int64),
+    ('atomic_weight_ratio', float64),
     ('electron_xs_energy_grid_offset', int64),
     ('electron_xs_energy_grid_length', int64),
     ('electron_total_xs_offset', int64),
@@ -402,6 +402,7 @@ nuclide = into_dtype([
     ('name', 'U32'),
     ('temperature', float64),
     ('atomic_number', int64),
+    ('mass_number', int64),
     ('atomic_weight_ratio', float64),
     ('fissionable', bool),
     ('excitation_level', int64),
@@ -559,6 +560,7 @@ settings = into_dtype([
     ('proton_transport', bool),
     ('neutron_multigroup_mode', bool),
     ('neutron_eigenvalue_mode', bool),
+    ('fission_emission_model', int64),
     ('gpu_strategy', int64),
     ('gpu_async_type', int64),
     ('gpu_storage', int64),

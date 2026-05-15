@@ -33,6 +33,7 @@ class Nuclide(ObjectNonSingleton):
     name: str
     temperature: float
     atomic_number: int
+    mass_number: int
     atomic_weight_ratio: float
     fissionable: bool
     excitation_level: int
@@ -67,6 +68,12 @@ class Nuclide(ObjectNonSingleton):
         file_name = f"{nuclide_name}-{temperature}K.h5"
         file = h5py.File(f"{dir_name}/{file_name}", "r")
         self.atomic_number = int(file["atomic_number"][()])
+        ### Temporary to handle missing mass number in some nuclides in old datasets
+        if "mass_number" in file:
+            self.mass_number = int(file["mass_number"][()])
+        else:
+            self.mass_number = _mass_number_from_name(nuclide_name)
+        ### Temporary
         self.atomic_weight_ratio = file["atomic_weight_ratio"][()]
         self.fissionable = bool(file["fissionable"][()])
         self.excitation_level = int(file["excitation_level"][()])
@@ -217,6 +224,7 @@ class Nuclide(ObjectNonSingleton):
         text += f"  - ID: {self.ID}\n"
         text += f"  - Name: {self.name}\n"
         text += f"  - Atomic number: {self.atomic_number}\n"
+        text += f"  - Mass number: {self.mass_number}\n"
         text += f"  - Atomic weight ratio: {self.atomic_weight_ratio}\n"
         text += f"  - Reaction MTs\n"
         text += f"    - Elastic scattering: {[int(x.MT) for x in self.neutron_elastic_scattering_reactions]}\n"
@@ -264,3 +272,10 @@ def set_fission_multiplicity(h5_group):
         print_error(f"Unsupported multiplicity of type {multiplicity_type}")
 
     return multiplicity
+
+# Temporary function
+def _mass_number_from_name(nuclide_name):
+    digits = "".join(ch for ch in nuclide_name if ch.isdigit())
+    if digits == "":
+        print_error(f"Cannot infer mass number from nuclide name: {nuclide_name}")
+    return int(digits)
