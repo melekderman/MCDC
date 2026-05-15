@@ -44,6 +44,11 @@ from mcdc.transport.physics.util import (
 )
 from mcdc.transport.util import find_bin, linear_interpolation
 
+# Upper bound on the prompt-neutron multiplicity returned by a single CGMF
+# event. Sizes the per-fission scratch buffer; the buffer is refilled (with
+# another correlated event) if more secondaries are requested.
+CGMF_MAX_PROMPT_NEUTRONS = 32
+
 # ======================================================================================
 # Particle attributes
 # ======================================================================================
@@ -773,6 +778,7 @@ def fission(
     collision_data = collision_data_container[0]
 
     settings = simulation["settings"]
+    use_cgmf = settings["fission_emission_model"] == FISSION_EMISSION_CGMF
 
     reaction_base_ID = reaction["parent_ID"]
     reaction_base = simulation["neutron_reactions"][reaction_base_ID]
@@ -812,6 +818,31 @@ def fission(
         )
     )
 
+    # Pre-sample a CGMF event per fission. Subsequent prompt secondaries
+    # are consumed from this buffer; if it runs out the buffer is
+    # refilled with another correlated event.
+    cgmf_count = util.local_array(1, type_.int64)
+    cgmf_energies = util.local_array(CGMF_MAX_PROMPT_NEUTRONS, type_.float64)
+    cgmf_cosu = util.local_array(CGMF_MAX_PROMPT_NEUTRONS, type_.float64)
+    cgmf_cosv = util.local_array(CGMF_MAX_PROMPT_NEUTRONS, type_.float64)
+    cgmf_cosw = util.local_array(CGMF_MAX_PROMPT_NEUTRONS, type_.float64)
+    cgmf_idx = 0
+    zaid = 0
+    if use_cgmf:
+        zaid = 1000 * nuclide["atomic_number"] + nuclide["mass_number"]
+        with objmode():
+            from mcdc.transport.physics.neutron import cgmf as cgmf_module
+
+            cgmf_module.fill_event(
+                zaid,
+                E,
+                cgmf_count,
+                cgmf_energies,
+                cgmf_cosu,
+                cgmf_cosv,
+                cgmf_cosw,
+            )
+
     # Set up secondary partice container
     particle_container_new = util.local_array(1, type_.particle_data)
     particle_new = particle_container_new[0]
@@ -846,17 +877,40 @@ def fission(
         # ==============================================================================
 
         if prompt:
-            sample_prompt_fission_neutron(
-                reaction,
-                particle_container_new,
-                nuclide,
-                simulation,
-                data,
-                E,
-                ux,
-                uy,
-                uz,
-            )
+            if use_cgmf:
+                # Refill the buffer with a new correlated event if exhausted
+                if cgmf_idx >= cgmf_count[0]:
+                    with objmode():
+                        from mcdc.transport.physics.neutron import cgmf as cgmf_module
+
+                        cgmf_module.fill_event(
+                            zaid,
+                            E,
+                            cgmf_count,
+                            cgmf_energies,
+                            cgmf_cosu,
+                            cgmf_cosv,
+                            cgmf_cosw,
+                        )
+                    cgmf_idx = 0
+
+                particle_new["E"] = cgmf_energies[cgmf_idx]
+                particle_new["ux"] = cgmf_cosu[cgmf_idx]
+                particle_new["uy"] = cgmf_cosv[cgmf_idx]
+                particle_new["uz"] = cgmf_cosw[cgmf_idx]
+                cgmf_idx += 1
+            else:
+                sample_prompt_fission_neutron(
+                    reaction,
+                    particle_container_new,
+                    nuclide,
+                    simulation,
+                    data,
+                    E,
+                    ux,
+                    uy,
+                    uz,
+                )
 
         # ==============================================================================
         # Sample delayed fission neutron
@@ -938,27 +992,6 @@ def sample_prompt_fission_neutron(
     reaction, particle_container_new, nuclide, simulation, data, E, ux, uy, uz
 ):
     particle_new = particle_container_new[0]
-    settings = simulation["settings"]
-
-    if settings["fission_emission_model"] == FISSION_EMISSION_CGMF:
-        zaid = 1000 * nuclide["atomic_number"] + nuclide["mass_number"]
-        xi = rng.lcg(particle_container_new)
-
-        with objmode(
-            E_new="float64",
-            ux_new="float64",
-            uy_new="float64",
-            uz_new="float64",
-        ):
-            from mcdc.transport.physics.neutron import cgmf
-
-            E_new, ux_new, uy_new, uz_new = cgmf.sample_prompt_neutron(zaid, E, xi)
-
-        particle_new["ux"] = ux_new
-        particle_new["uy"] = uy_new
-        particle_new["uz"] = uz_new
-        particle_new["E"] = E_new
-        return
 
     # Sample angle (if not energy-correlated)
     angle_type = reaction["angle_type"]
@@ -1000,10 +1033,7 @@ def sample_prompt_fission_neutron(
         mu_COM = mu
         E_COM = E_new
 
-        E_new = (
-            E_COM
-            + (E + 2 * mu_COM * (A + 1) * math.sqrt(E * E_COM)) / (A + 1) ** 2
-        )
+        E_new = E_COM + (E + 2 * mu_COM * (A + 1) * math.sqrt(E * E_COM)) / (A + 1) ** 2
         mu = mu_COM * math.sqrt(E_COM / E_new) + math.sqrt(E / E_new) / (A + 1)
 
     azi = 2.0 * PI * rng.lcg(particle_container_new)
