@@ -1,6 +1,6 @@
 import math
 
-from numba import njit
+from numba import njit, objmode
 
 ####
 
@@ -28,6 +28,7 @@ from mcdc.constant import (
     NEUTRON_REACTION_ELASTIC_SCATTERING,
     NEUTRON_REACTION_FISSION,
     REFERENCE_FRAME_COM,
+    FISSION_EMISSION_CGMF,
 )
 from mcdc.transport.data import evaluate_data
 from mcdc.transport.distribution import (
@@ -845,60 +846,17 @@ def fission(
         # ==============================================================================
 
         if prompt:
-            # Sample angle (if not energy-correlated)
-            angle_type = reaction["angle_type"]
-            if angle_type == ANGLE_ENERGY_CORRELATED:
-                pass
-            elif angle_type == ANGLE_ISOTROPIC:
-                mu = sample_isotropic_cosine(particle_container_new)
-            elif angle_type == ANGLE_DISTRIBUTED:
-                distribution_base = simulation["distributions"][reaction["mu_ID"]]
-                multi_table = simulation["multi_table_distributions"][
-                    distribution_base["child_ID"]
-                ]
-                mu = sample_multi_table(E, particle_container_new, multi_table, data)
-
-            # Sample energy (also angle if correlated)
-            spectrum_base = simulation["distributions"][reaction["spectrum_ID"]]
-            if not angle_type == ANGLE_ENERGY_CORRELATED:
-                E_new = sample_distribution_with_scale(
-                    E,
-                    spectrum_base,
-                    particle_container_new,
-                    simulation,
-                    data,
-                )
-            else:
-                E_new, mu = sample_correlated_distribution_with_scale(
-                    E,
-                    spectrum_base,
-                    particle_container_new,
-                    simulation,
-                    data,
-                )
-
-            # Frame transformation
-            reaction_base = simulation["neutron_reactions"][int(reaction["parent_ID"])]
-            reference_frame = reaction_base["reference_frame"]
-            if reference_frame == REFERENCE_FRAME_COM:
-                A = nuclide["atomic_weight_ratio"]
-                mu_COM = mu
-                E_COM = E_new
-
-                E_new = (
-                    E_COM
-                    + (E + 2 * mu_COM * (A + 1) * math.sqrt(E * E_COM)) / (A + 1) ** 2
-                )
-                mu = mu_COM * math.sqrt(E_COM / E_new) + math.sqrt(E / E_new) / (A + 1)
-
-            azi = 2.0 * PI * rng.lcg(particle_container_new)
-            ux_new, uy_new, uz_new = scatter_direction(ux, uy, uz, mu, azi)
-
-            # Now the secondary angle and energy are finalized
-            particle_new["ux"] = ux_new
-            particle_new["uy"] = uy_new
-            particle_new["uz"] = uz_new
-            particle_new["E"] = E_new
+            sample_prompt_fission_neutron(
+                reaction,
+                particle_container_new,
+                nuclide,
+                simulation,
+                data,
+                E,
+                ux,
+                uy,
+                uz,
+            )
 
         # ==============================================================================
         # Sample delayed fission neutron
@@ -973,6 +931,89 @@ def fission(
         else:
             # Particle will participate after the current census is completed
             particle_bank_module.bank_census_particle(particle_container_new, program)
+
+
+@njit
+def sample_prompt_fission_neutron(
+    reaction, particle_container_new, nuclide, simulation, data, E, ux, uy, uz
+):
+    particle_new = particle_container_new[0]
+    settings = simulation["settings"]
+
+    if settings["fission_emission_model"] == FISSION_EMISSION_CGMF:
+        zaid = 1000 * nuclide["atomic_number"] + nuclide["mass_number"]
+        xi = rng.lcg(particle_container_new)
+
+        with objmode(
+            E_new="float64",
+            ux_new="float64",
+            uy_new="float64",
+            uz_new="float64",
+        ):
+            from mcdc.transport.physics.neutron import cgmf
+
+            E_new, ux_new, uy_new, uz_new = cgmf.sample_prompt_neutron(zaid, E, xi)
+
+        particle_new["ux"] = ux_new
+        particle_new["uy"] = uy_new
+        particle_new["uz"] = uz_new
+        particle_new["E"] = E_new
+        return
+
+    # Sample angle (if not energy-correlated)
+    angle_type = reaction["angle_type"]
+    if angle_type == ANGLE_ENERGY_CORRELATED:
+        pass
+    elif angle_type == ANGLE_ISOTROPIC:
+        mu = sample_isotropic_cosine(particle_container_new)
+    elif angle_type == ANGLE_DISTRIBUTED:
+        distribution_base = simulation["distributions"][reaction["mu_ID"]]
+        multi_table = simulation["multi_table_distributions"][
+            distribution_base["child_ID"]
+        ]
+        mu = sample_multi_table(E, particle_container_new, multi_table, data)
+
+    # Sample energy (also angle if correlated)
+    spectrum_base = simulation["distributions"][reaction["spectrum_ID"]]
+    if not angle_type == ANGLE_ENERGY_CORRELATED:
+        E_new = sample_distribution_with_scale(
+            E,
+            spectrum_base,
+            particle_container_new,
+            simulation,
+            data,
+        )
+    else:
+        E_new, mu = sample_correlated_distribution_with_scale(
+            E,
+            spectrum_base,
+            particle_container_new,
+            simulation,
+            data,
+        )
+
+    # Frame transformation
+    reaction_base = simulation["neutron_reactions"][int(reaction["parent_ID"])]
+    reference_frame = reaction_base["reference_frame"]
+    if reference_frame == REFERENCE_FRAME_COM:
+        A = nuclide["atomic_weight_ratio"]
+        mu_COM = mu
+        E_COM = E_new
+
+        E_new = (
+            E_COM
+            + (E + 2 * mu_COM * (A + 1) * math.sqrt(E * E_COM)) / (A + 1) ** 2
+        )
+        mu = mu_COM * math.sqrt(E_COM / E_new) + math.sqrt(E / E_new) / (A + 1)
+
+    azi = 2.0 * PI * rng.lcg(particle_container_new)
+    ux_new, uy_new, uz_new = scatter_direction(ux, uy, uz, mu, azi)
+
+    # Now the secondary angle and energy are finalized
+    particle_new["ux"] = ux_new
+    particle_new["uy"] = uy_new
+    particle_new["uz"] = uz_new
+    particle_new["E"] = E_new
 
 
 @njit
