@@ -1,55 +1,61 @@
-## MCNP vs MCDC examples
-# U-235 Sphere
 import mcdc
 import numpy as np
 import os
 
+# Set MCDC library path
 os.environ["MCDC_LIB"] = "../mcdc_data"
 
 #===========
 # Set Model
 #===========
 
+# Set material
 U_235 = mcdc.Material(nuclide_composition={"U235": 0.048807514})
 
-# Set Surfaces
-# 
-sphere = mcdc.Surface.Sphere(center=[0, 0, 0], radius=5.0, boundary_condition="vacuum")
-
+# Geometry
+sphere = mcdc.Surface.Sphere(center=[0, 0, 0], radius=10.0, boundary_condition="vacuum")
 inside_sphere = -sphere
 sphere_cell = mcdc.Cell(region=inside_sphere, fill=U_235)
 
-# Set Source
-ENERGY = 14e6
-energy = np.array([[ENERGY - 1e-8, ENERGY + 1e-8], [0.5,0.5]])
-mcdc.Source(position=[0,0,0], isotropic=True, energy=energy) # energy in ev
+#===========
+# Set Source (Time dependent pulse)
+#===========
+# At t=0, 14 MeV neutrons are emitted from the center
+ENERGY = 14e6 # 14 MeV neutrons
+mcdc.Source(position=[0, 0, 0], 
+            isotropic=True, 
+            energy=np.array([[ENERGY - 1.0, ENERGY + 1.0], [0.5, 0.5]]), # Monoenergetic source with a small energy bin
+            time=0.0) # Instantaneous source at t=0
 
+#===========
+# Axes (For Analysis)
+#===========
 
-r = np.linspace(0,5,100)
-theta = np.linspace(0,np.pi,100)
-phi = np.linspace(0,2*np.pi,100)
+# Time Axis: 0 to 100 nanoseconds, 200 bins
+# Considering the speed of neutrons and the size of the sphere, nanosecond scale is appropriate for this problem.
+t_axis = np.linspace(0, 100, 201) 
 
-x = r *np.cos(theta) * np.sin(phi)
-y = r *np.sin(theta) * np.sin(phi)
-z = r * np.cos(theta)
-mesh = np.meshgrid(x,y,z)
+# Energy Axis
+E_axis = np.logspace(-3, 7, 101) # 1e-3 eV to 10 MeV
 
-E_1 = np.linspace(1e6,14e6,100)
-#E_2 = np.linspace(200,1e5,1000)
-#E_3 = np.linspace(1.1e5,14e6,1000)
-#E_axis = np.concatenate([E_1, E_2, E_3])
-E_axis = E_1
+#===========
+# Tallies (Time and Energy Dependent)
+#===========
+# Recording how the flux inside the sphere changes over time
+mcdc.Tally(scores=["flux"], time=t_axis, energy=E_axis)
 
-# tallies
-
-# whole sphere
-mcdc.Tally(cell=sphere_cell, scores=["flux"],energy=E_axis)
-
+#===========
 # Settings
-N = 10
+#===========
+N = 1e3 # For statistical significance, at least 100,000 particles
+mcdc.settings.N_particle = int(N)
+mcdc.settings.active_bank_buffer = int(100*N)
 
-mcdc.settings.N_particle = N
-mcdc.settings.active_bank_buffer = 100*N
+# CRITICAL SETTING: To check the CGMF implementation
 mcdc.settings.set_fission_emission_model("cgmf")
 
+# Time boundary for the simulation (100 ns)
+mcdc.settings.time_boundary = 100.0
+
+# Run
 mcdc.run()
