@@ -21,8 +21,8 @@ class Element(ObjectNonSingleton):
     label: str = "element"
     #
     name: str
-    atomic_weight_ratio: float
     atomic_number: int
+    atomic_weight_ratio: float
     #
     electron_xs_energy_grid: NDArray[float64]
     electron_total_xs: NDArray[float64]

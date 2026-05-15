@@ -167,11 +167,10 @@ class Settings(ObjectSingleton):
             else:
                 print_error(r"Unsupported particle types: {particle}")
 
-
     def set_fission_emission_model(self, model):
         if model == "endf":
             self.fission_emission_model = FISSION_EMISSION_ENDF
         elif model == "cgmf":
             self.fission_emission_model = FISSION_EMISSION_CGMF
         else:
-            print_error("Unknown fission emission model")
+            print_error(f"Unsupported fission emission model: {model}")

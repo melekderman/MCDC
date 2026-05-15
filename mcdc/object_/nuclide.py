@@ -273,9 +273,12 @@ def set_fission_multiplicity(h5_group):
 
     return multiplicity
 
+
 # Temporary function
 def _mass_number_from_name(nuclide_name):
     digits = "".join(ch for ch in nuclide_name if ch.isdigit())
     if digits == "":
         print_error(f"Cannot infer mass number from nuclide name: {nuclide_name}")
+        return 0
     return int(digits)
+
