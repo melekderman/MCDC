@@ -69,11 +69,7 @@ class Nuclide(ObjectNonSingleton):
         file = h5py.File(f"{dir_name}/{file_name}", "r")
         self.atomic_number = int(file["atomic_number"][()])
         ### Temporary to handle missing mass number in some nuclides in old datasets
-        if "mass_number" in file:
-            self.mass_number = int(file["mass_number"][()])
-        else:
-            self.mass_number = _mass_number_from_name(nuclide_name)
-        ### Temporary
+        self.mass_number = int(file["mass_number"][()])
         self.atomic_weight_ratio = file["atomic_weight_ratio"][()]
         self.fissionable = bool(file["fissionable"][()])
         self.excitation_level = int(file["excitation_level"][()])
