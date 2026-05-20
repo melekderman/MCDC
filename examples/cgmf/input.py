@@ -36,14 +36,14 @@ mcdc.Source(
 # ============================================
 
 # Time Axis: 0 to 100 nanoseconds, 200 bins
-# Considering the speed of neutrons and the size of the sphere, 
+# Considering the speed of neutrons and the size of the sphere,
 # nanosecond scale is appropriate for this problem.
 t_axis = np.linspace(0, 100e-9, 51)
 
 # Energy Axis
-E_1 = np.logspace(-4, 0, 20)                        # thermal: 1e-4 -> 1 eV
-E_2 = np.logspace(0, 5, 20)                         # epithermal: 1 -> 1e5 eV
-E_3 = np.logspace(5, np.log10(14e6), 30)          # fast: 1e5 -> 14 MeV
+E_1 = np.logspace(-4, 0, 20)  # thermal: 1e-4 -> 1 eV
+E_2 = np.logspace(0, 5, 20)  # epithermal: 1 -> 1e5 eV
+E_3 = np.logspace(5, np.log10(14e6), 30)  # fast: 1e5 -> 14 MeV
 E_axis = np.concatenate([E_1, E_2[1:], E_3[1:]])
 
 

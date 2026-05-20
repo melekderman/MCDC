@@ -473,7 +473,7 @@ for ace_name in pbar:
         decay_rates = np.zeros(N_DNP)
 
         for i in range(N_DNP):
-            idx = 1 + 1
+            idx = i + 1
             data = dnp_block.precursor_group_data(idx)
 
             if (
@@ -503,7 +503,7 @@ for ace_name in pbar:
         N_DNP = dnp_block.number_delayed_precursors
 
         for i in range(N_DNP):
-            idx = 1 + 1
+            idx = i + 1
             data = delayed_spectrum_block.energy_distribution_data(idx)
 
             if not isinstance(data, ACEtk.continuous.OutgoingEnergyDistributionData):

@@ -829,19 +829,6 @@ def fission(
         weight_production = particle["w"] / weight_target
         weight_product = weight_target
 
-    # Fission yields
-    N_delayed = nuclide["N_neutron_fission_delayed_precursor"]
-    nu_p = neutron_fission_prompt_multiplicity(E, nuclide, simulation, data)
-    nu_d = neutron_fission_delayed_multiplicity(E, nuclide, simulation, data)
-    nu = nu_p + nu_d
-
-    # Get number of secondaries
-    N = int(
-        math.floor(
-            weight_production * nu / simulation["k_eff"] + rng.lcg(particle_container)
-        )
-    )
-
     # Pre-sample a CGMF event per fission. Subsequent prompt secondaries
     # are consumed from this buffer; if it runs out the buffer is
     # refilled with another correlated event.
@@ -864,6 +851,22 @@ def fission(
             cgmf_cosw,
         )
 
+    # Fission yields
+    N_delayed = nuclide["N_neutron_fission_delayed_precursor"]
+    if use_cgmf:
+        nu_p = float(cgmf_count[0])
+    else:
+        nu_p = neutron_fission_prompt_multiplicity(E, nuclide, simulation, data)
+    nu_d = neutron_fission_delayed_multiplicity(E, nuclide, simulation, data)
+    nu = nu_p + nu_d
+
+    # Get number of secondaries
+    N = int(
+        math.floor(
+            weight_production * nu / simulation["k_eff"] + rng.lcg(particle_container)
+        )
+    )
+
     # Set up secondary partice container
     particle_container_new = util.local_array(1, type_.particle_data)
     particle_new = particle_container_new[0]
@@ -879,11 +882,22 @@ def fission(
         # Prompt or delayed?
         prompt = True
         delayed_group = -1
-        xi = rng.lcg(particle_container_new)
-        total = nu_p
-        if xi > total:
+        if nu_d > 0.0 and N_delayed > 0:
+            xi = rng.lcg(particle_container_new) * nu
+        else:
+            xi = 0.0
+        if xi >= nu_p:
             prompt = False
+
+            delayed_fraction_total = 0.0
+            for j in range(N_delayed):
+                delayed_fraction_total += (
+                    mcdc_get.nuclide.neutron_fission_delayed_fractions(j, nuclide, data)
+                )
+
             # Determine delayed group
+            xi = rng.lcg(particle_container_new) * delayed_fraction_total
+            total = 0.0
             for j in range(N_delayed):
                 fraction = mcdc_get.nuclide.neutron_fission_delayed_fractions(
                     j, nuclide, data
@@ -892,6 +906,8 @@ def fission(
                 if xi < total:
                     delayed_group = j
                     break
+            if delayed_group < 0:
+                delayed_group = N_delayed - 1
 
         # ==============================================================================
         # Sample prompt neutron
@@ -937,14 +953,31 @@ def fission(
         else:
             # Sample isotropic angle
             ux_new, uy_new, uz_new = sample_isotropic_direction(particle_container_new)
+            particle_new["ux"] = ux_new
+            particle_new["uy"] = uy_new
+            particle_new["uz"] = uz_new
+
+            # Sample energy
+            ID = int(
+                mcdc_get.nuclide.neutron_fission_delayed_spectrum_IDs(
+                    delayed_group, nuclide, data
+                )
+            )
+            spectrum_base = simulation["distributions"][ID]
+            particle_new["E"] = sample_distribution_with_scale(
+                E,
+                spectrum_base,
+                particle_container_new,
+                simulation,
+                data,
+            )
 
             # Sample emission time
-            decay_rate = mcdc_get.nuclide.neutron_fission_delayed_fractions(
+            decay_rate = mcdc_get.nuclide.neutron_fission_delayed_decay_rates(
                 delayed_group, nuclide, data
             )
-            if not prompt:
-                xi = rng.lcg(particle_container_new)
-                particle_new["t"] -= math.log(xi) / decay_rate
+            xi = rng.lcg(particle_container_new)
+            particle_new["t"] -= math.log(xi) / decay_rate
 
         # Subtract outgoing energy from energy deposition
         collision_data["energy_deposition"] -= particle_new["E"] * particle_new["w"]
