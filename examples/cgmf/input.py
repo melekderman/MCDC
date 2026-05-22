@@ -3,7 +3,7 @@ import numpy as np
 import os
 
 # Set MCDC library path
-os.environ["MCDC_LIB"] = "/nfs/stak/users/dermanm/5-Jack/MCDC/examples/mcdc_data"
+os.environ["MCDC_LIB"] = "../mcdc_data"
 
 # ============================================
 # Set Model
@@ -13,7 +13,7 @@ os.environ["MCDC_LIB"] = "/nfs/stak/users/dermanm/5-Jack/MCDC/examples/mcdc_data
 U_235 = mcdc.Material(nuclide_composition={"U235": 0.048807514})
 
 # Geometry
-sphere = mcdc.Surface.Sphere(center=[0, 0, 0], radius=8.0, boundary_condition="vacuum")
+sphere = mcdc.Surface.Sphere(center=[0, 0, 0], radius=10.0, boundary_condition="vacuum")
 inside_sphere = -sphere
 sphere_cell = mcdc.Cell(region=inside_sphere, fill=U_235)
 
@@ -34,11 +34,11 @@ mcdc.Source(
 # ============================================
 # Axes (For Analysis)
 # ============================================
-
+t_end = 100e-9  # 100 nanoseconds
 # Time Axis: 0 to 100 nanoseconds, 200 bins
 # Considering the speed of neutrons and the size of the sphere,
 # nanosecond scale is appropriate for this problem.
-t_axis = np.linspace(0, 100e-9, 51)
+t_axis = np.linspace(0, t_end, 101)
 
 # Energy Axis
 E_1 = np.logspace(-4, 0, 20)  # thermal: 1e-4 -> 1 eV
@@ -56,15 +56,20 @@ mcdc.Tally(scores=["flux"], time=t_axis, energy=E_axis)
 # ===========
 # Settings
 # ===========
-N = 1e3  # For statistical significance, at least 100,000 particles
+N = 10000
+mcdc.settings.N_batch = int(1)
 mcdc.settings.N_particle = int(N)
 mcdc.settings.active_bank_buffer = int(100 * N)
 
 # CRITICAL SETTING: To check the CGMF implementation
-mcdc.settings.set_fission_emission_model("cgmf")
+#mcdc.settings.set_fission_emission_model("cgmf")
 
 # Time boundary for the simulation (100 ns)
-mcdc.settings.time_boundary = 100e-9
+time_census = np.linspace(0.0, 100e-9, 11)[1:-1]
+mcdc.settings.set_time_census(time_census)
+mcdc.settings.census_bank_buffer_ratio = 10.0
+mcdc.settings.source_bank_buffer_ratio = 5.0
+mcdc.simulation.population_control()
 
 # Run
 mcdc.run()

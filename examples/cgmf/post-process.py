@@ -61,9 +61,9 @@ ax.set_xlim(E_mid_cgmf[0], E_mid_cgmf[-1])
 # -- Left: integrated flux vs time (marker for current frame) ---
 ax0 = axes[0]
 phi_t_cgmf = phi_cgmf.sum(axis=0)   # integrate over energy
-phi_t_sd_cgmf = np.sqrt((phi_sd_cgmf**2).sum(axis=0))
+phi_t_sd_cgmf = np.sqrt((sd_cgmf**2).sum(axis=0))
 phi_t_mcdc = phi_mcdc.sum(axis=0)
-phi_t_sd_mcdc = np.sqrt((phi_sd_mcdc**2).sum(axis=0))
+phi_t_sd_mcdc = np.sqrt((sd_mcdc**2).sum(axis=0))
 
 ax0.plot(t_mid_cgmf * 1e9, phi_t_cgmf, "r-",  alpha=0.6, label="CGMF")
 ax0.plot(t_mid_mcdc * 1e9, phi_t_mcdc, "b-",  alpha=0.6, label="MC/DC")
