@@ -19,6 +19,18 @@ _CGMFWRAP = None
 _MAX_EVENT_RETRIES = 32
 
 
+def _validate_prompt_event(energies_eV, cosu, cosv, cosw):
+    if (
+        np.isnan(energies_eV).any()
+        or np.isnan(cosu).any()
+        or np.isnan(cosv).any()
+        or np.isnan(cosw).any()
+    ):
+        return None
+
+    return cosu, cosv, cosw
+
+
 def _load_cgmfwrap():
     global _CGMFWRAP
 
@@ -50,8 +62,8 @@ def _load_cgmfwrap():
 def run_event(zaid, incident_energy_eV):
     """Sample one CGMF fission event.
 
-    Retries up to _MAX_EVENT_RETRIES times if CGMF returns an event with no
-    prompt neutrons.
+    Retries up to _MAX_EVENT_RETRIES times if CGMF returns an invalid event or
+    an event with no prompt neutrons.
 
     Returns
     -------
@@ -72,10 +84,16 @@ def run_event(zaid, incident_energy_eV):
         cosu = np.asarray(event.neutron_dir_cosu[:n], dtype=np.float64)
         cosv = np.asarray(event.neutron_dir_cosv[:n], dtype=np.float64)
         cosw = np.asarray(event.neutron_dir_cosw[:n], dtype=np.float64)
+
+        directions = _validate_prompt_event(energies_eV, cosu, cosv, cosw)
+        if directions is None:
+            continue
+
+        cosu, cosv, cosw = directions
         return n, energies_eV, cosu, cosv, cosw
 
     raise RuntimeError(
-        f"CGMF yielded no prompt neutron in {_MAX_EVENT_RETRIES} attempts "
+        f"CGMF yielded no valid prompt neutron event in {_MAX_EVENT_RETRIES} attempts "
         f"(zaid={int(zaid)}, E_in={float(incident_energy_eV):.3e} eV)."
     )
 

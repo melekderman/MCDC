@@ -45,9 +45,7 @@ from mcdc.transport.physics.util import (
 )
 from mcdc.transport.util import find_bin, linear_interpolation
 
-# Upper bound on the prompt-neutron multiplicity returned by a single CGMF
-# event. Sizes the per-fission scratch buffer; the buffer is refilled (with
-# another correlated event) if more secondaries are requested.
+# Upper bound on the prompt-neutron multiplicity returned by a single CGMF event.
 CGMF_MAX_PROMPT_NEUTRONS = 32
 
 
@@ -218,10 +216,8 @@ def _neutron_inelastic_scattering_production_xs(particle_container, simulation, 
                     j, nuclide, data
                 )
             )
-            reaction_base = simulation["neutron_reactions"][reaction_ID]
-            reaction = simulation["neutron_inelastic_scattering_reactions"][
-                reaction_base["child_ID"]
-            ]
+            reaction = simulation["neutron_inelastic_scattering_reactions"][reaction_ID]
+            reaction_base = simulation["neutron_reactions"][reaction["parent_ID"]]
 
             xs = reaction_micro_xs(E, reaction_base, nuclide, data)
             nu = reaction["multiplicity"]
@@ -253,7 +249,8 @@ def _neutron_fission_production_xs(particle_container, simulation, data):
             reaction_ID = int(
                 mcdc_get.nuclide.neutron_fission_reaction_IDs(j, nuclide, data)
             )
-            reaction_base = simulation["neutron_reactions"][reaction_ID]
+            reaction = simulation["neutron_fission_reactions"][reaction_ID]
+            reaction_base = simulation["neutron_reactions"][reaction["parent_ID"]]
 
             xs = reaction_micro_xs(E, reaction_base, nuclide, data)
             nu_p = neutron_fission_prompt_multiplicity(E, nuclide, simulation, data)
@@ -829,9 +826,7 @@ def fission(
         weight_production = particle["w"] / weight_target
         weight_product = weight_target
 
-    # Pre-sample a CGMF event per fission. Subsequent prompt secondaries
-    # are consumed from this buffer; if it runs out the buffer is
-    # refilled with another correlated event.
+    # Pre-sample a CGMF event per fission
     cgmf_count = util.local_array(1, type_.int64)
     cgmf_energies = util.local_array(CGMF_MAX_PROMPT_NEUTRONS, type_.float64)
     cgmf_cosu = util.local_array(CGMF_MAX_PROMPT_NEUTRONS, type_.float64)
@@ -853,19 +848,31 @@ def fission(
 
     # Fission yields
     N_delayed = nuclide["N_neutron_fission_delayed_precursor"]
+    nu_d = neutron_fission_delayed_multiplicity(E, nuclide, simulation, data)
+
+    # Get number of prompt secondaries
+    # If use_cgmf, use the CGMF-generated prompt multiplicity and apply
+    # weight_production / k_eff to the prompt secondary weights.
     if use_cgmf:
-        nu_p = float(cgmf_count[0])
+        N_p = cgmf_count[0]
+        weight_prompt = weight_product * weight_production / simulation["k_eff"]
     else:
         nu_p = neutron_fission_prompt_multiplicity(E, nuclide, simulation, data)
-    nu_d = neutron_fission_delayed_multiplicity(E, nuclide, simulation, data)
-    nu = nu_p + nu_d
+        N_p = int(
+            math.floor(
+                weight_production * nu_p / simulation["k_eff"]
+                + rng.lcg(particle_container)
+            )
+        )
+        weight_prompt = weight_product
 
-    # Get number of secondaries
-    N = int(
+    # Get number of delayed secondaries from ENDF
+    N_d = int(
         math.floor(
-            weight_production * nu / simulation["k_eff"] + rng.lcg(particle_container)
+            weight_production * nu_d / simulation["k_eff"] + rng.lcg(particle_container)
         )
     )
+    N = N_p + N_d
 
     # Set up secondary partice container
     particle_container_new = util.local_array(1, type_.particle_data)
@@ -876,18 +883,13 @@ def fission(
         # Set default attributes
         particle_module.copy_as_child(particle_container_new, particle_container)
 
-        # Set weight
-        particle_new["w"] = weight_product
-
         # Prompt or delayed?
-        prompt = True
+        prompt = n < N_p
         delayed_group = -1
-        if nu_d > 0.0 and N_delayed > 0:
-            xi = rng.lcg(particle_container_new) * nu
+        if prompt:
+            particle_new["w"] = weight_prompt
         else:
-            xi = 0.0
-        if xi >= nu_p:
-            prompt = False
+            particle_new["w"] = weight_product
 
             delayed_fraction_total = 0.0
             for j in range(N_delayed):
@@ -915,19 +917,6 @@ def fission(
 
         if prompt:
             if use_cgmf:
-                # Refill the buffer with a new correlated event if exhausted
-                if cgmf_idx >= cgmf_count[0]:
-                    fill_cgmf_event(
-                        zaid,
-                        E,
-                        cgmf_count,
-                        cgmf_energies,
-                        cgmf_cosu,
-                        cgmf_cosv,
-                        cgmf_cosw,
-                    )
-                    cgmf_idx = 0
-
                 particle_new["E"] = cgmf_energies[cgmf_idx]
                 particle_new["ux"] = cgmf_cosu[cgmf_idx]
                 particle_new["uy"] = cgmf_cosv[cgmf_idx]
