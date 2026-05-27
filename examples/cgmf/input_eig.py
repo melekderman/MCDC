@@ -9,10 +9,10 @@ os.environ["MCDC_LIB"] = "../mcdc_data"
 # Parameters
 # =============================================================================
 RADIUS = 10.0         # cm
-T_END = 150e-9        # s
 E_SOURCE = 14.0e6     # eV
 
 N_PARTICLE = 100
+N_INACTIVE = 5
 N_BATCH = 50
 
 # =============================================================================
@@ -47,8 +47,6 @@ mcdc.Source(
 # =============================================================================
 # Tallies
 # =============================================================================
-t_axis = np.linspace(0.0, T_END, 101)
-
 # Energy grid: thermal + epithermal + fast
 E_thermal = np.logspace(-4, 0, 20)              # 1e-4 -> 1 eV
 E_epi = np.logspace(0, 5, 20)                   # 1 -> 1e5 eV
@@ -57,35 +55,31 @@ E_fast = np.logspace(5, np.log10(20e6), 30)     # 1e5 -> 20 MeV
 E_axis = np.unique(np.concatenate([E_thermal, E_epi, E_fast]))
 
 mcdc.Tally(
-    name="flux_TD",
+    name="flux_EIG",
     scores=["flux"],
     cell=fuel_cell,
-    time=t_axis,
     energy=E_axis,
 )
 
 # ============================================================================
-# Tallies (Time and Energy Dependent)
-# ============================================================================
-# Recording how the flux inside the sphere changes over time
-mcdc.Tally(scores=["flux"], time=t_axis, energy=E_axis)
-
-# ============================================================================
 # Settings
 # ============================================================================
-N = 10
-mcdc.settings.N_batch = 50
-mcdc.settings.N_particle = N
-mcdc.settings.active_bank_buffer = 100 * N
-
-# CGMF SETTING:
-mcdc.settings.set_fission_emission_model("cgmf")
-
-# Time boundary for the simulation (150 ns)
-time_census = np.linspace(0.0, T_END, 16)[1:-1]
-mcdc.settings.set_time_census(time_census)
+mcdc.settings.N_particle = N_PARTICLE
+mcdc.settings.active_bank_buffer = 100 * N_PARTICLE
 mcdc.settings.census_bank_buffer_ratio = 10.0
 mcdc.settings.source_bank_buffer_ratio = 5.0
+
+# Eigenvalue mode
+mcdc.settings.set_eigenmode(
+    N_inactive=N_INACTIVE,
+    N_active=N_BATCH,
+    gyration_radius="all",
+)
+
+# CGMF SETTING:
+#mcdc.settings.set_fission_emission_model("cgmf")
+
+# Techniques
 mcdc.simulation.population_control()
 
 # Run
