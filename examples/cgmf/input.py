@@ -84,7 +84,7 @@ mcdc.settings.set_fission_emission_model("cgmf")
 # Time boundary for the simulation (150 ns)
 time_census = np.linspace(0.0, T_END, 16)[1:-1]
 mcdc.settings.set_time_census(time_census)
-mcdc.settings.census_bank_buffer_ratio = 10.0
+mcdc.settings.census_bank_buffer_ratio = 20.0
 mcdc.settings.source_bank_buffer_ratio = 5.0
 mcdc.simulation.population_control()
 
