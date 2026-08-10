@@ -120,6 +120,35 @@ def mgxs_scatter_chunk(start, length, multigroup_material, data, value):
 
 
 @njit
+def mgxs_scatter_eta(index, multigroup_material, data, value):
+    offset = multigroup_material["mgxs_scatter_eta_offset"]
+    data[offset + index] = value
+
+
+@njit
+def mgxs_scatter_eta_all(multigroup_material, data, value):
+    start = multigroup_material["mgxs_scatter_eta_offset"]
+    size = multigroup_material["G"]
+    end = start + size
+    data[start:end] = value
+
+
+@njit
+def mgxs_scatter_eta_last(multigroup_material, data, value):
+    start = multigroup_material["mgxs_scatter_eta_offset"]
+    size = multigroup_material["G"]
+    end = start + size
+    data[end - 1] = value
+
+
+@njit
+def mgxs_scatter_eta_chunk(start, length, multigroup_material, data, value):
+    start += multigroup_material["mgxs_scatter_eta_offset"]
+    end = start + length
+    data[start:end] = value
+
+
+@njit
 def mgxs_fission(index, multigroup_material, data, value):
     offset = multigroup_material["mgxs_fission_offset"]
     data[offset + index] = value

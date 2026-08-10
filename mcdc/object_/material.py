@@ -246,6 +246,8 @@ class MaterialMG(MaterialBase):
         Capture cross section for each group.
     scatter : ndarray, optional
         Scattering matrix ``(G, G)``.
+    scatter_eta : float or ndarray, optional
+        Screened Rutherford scattering parameter for each group.
     fission : ndarray, optional
         Fission cross section for each group.
     nu_s : ndarray, optional
@@ -282,6 +284,7 @@ class MaterialMG(MaterialBase):
     mgxs_decay_rate: Annotated[NDArray[float64], ("J",)]
     mgxs_capture: Annotated[NDArray[float64], ("G",)]
     mgxs_scatter: Annotated[NDArray[float64], ("G",)]
+    mgxs_scatter_eta: Annotated[NDArray[float64], ("G",)]
     mgxs_fission: Annotated[NDArray[float64], ("G",)]
     mgxs_total: Annotated[NDArray[float64], ("G",)]
     mgxs_nu_s: Annotated[NDArray[float64], ("G",)]
@@ -298,6 +301,7 @@ class MaterialMG(MaterialBase):
         name: str = "",
         capture: NDArray[float64] | NoneType = None,
         scatter: NDArray[float64] | NoneType = None,
+        scatter_eta: float | NDArray[float64] | NoneType = None,
         fission: NDArray[float64] | NoneType = None,
         nu_s: NDArray[float64] | NoneType = None,
         nu_p: NDArray[float64] | NoneType = None,
@@ -332,6 +336,7 @@ class MaterialMG(MaterialBase):
         self.mgxs_decay_rate = np.ones(J) * np.inf
         self.mgxs_capture = np.zeros(G)
         self.mgxs_scatter = np.zeros(G)
+        self.mgxs_scatter_eta = np.zeros(G)
         self.mgxs_fission = np.zeros(G)
         self.mgxs_total = np.zeros(G)
         self.mgxs_nu_s = np.ones(G)
@@ -356,6 +361,11 @@ class MaterialMG(MaterialBase):
             self.mgxs_capture = capture
         if scatter is not None:
             self.mgxs_scatter = np.sum(scatter, 0)
+        if scatter_eta is not None:
+            if type(scatter_eta) == float:
+                self.mgxs_scatter_eta = np.ones(G) * scatter_eta
+            else:
+                self.mgxs_scatter_eta = scatter_eta
         if fission is not None:
             self.mgxs_fission = fission
             self.fissionable = True
@@ -435,6 +445,7 @@ class MaterialMG(MaterialBase):
         text += f"    - J: {self.J}\n"
         text += f"    - Sigma_c {print_1d_array(self.mgxs_capture)}\n"
         text += f"    - Sigma_s {print_1d_array(self.mgxs_scatter)}\n"
+        text += f"    - eta_s {print_1d_array(self.mgxs_scatter_eta)}\n"
         text += f"    - Sigma_f {print_1d_array(self.mgxs_fission)}\n"
         text += f"    - nu_s {print_1d_array(self.mgxs_nu_s)}\n"
         text += f"    - nu_p {print_1d_array(self.mgxs_nu_p)}\n"

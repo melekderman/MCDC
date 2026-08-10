@@ -138,7 +138,7 @@ def collision(particle_container, collision_data_container, program, data):
     xi = rng.lcg(particle_container) * SigmaT
     total = SigmaS
     if total > xi:
-        scattering(particle_container, program, data)
+        scattering(particle_container, collision_data_container, program, data)
     else:
         total += SigmaF
         if total > xi:
@@ -153,7 +153,7 @@ def collision(particle_container, collision_data_container, program, data):
 
 
 @njit
-def scattering(particle_container, program, data):
+def scattering(particle_container, collision_data_container, program, data):
     simulation = util.access_simulation(program)
 
     # Particle attributes
@@ -166,6 +166,13 @@ def scattering(particle_container, program, data):
     # Material attributes
     material = simulation["multigroup_materials"][particle["material_ID"]]
     G = material["G"]
+    eta = data[material["mgxs_scatter_eta_offset"] + g]
+
+    # Negative scatter_eta is reserved for Fokker-Planck angular diffusion.
+    # In that mode, direction updates are applied per transported segment in
+    # move_to_event(), so this fictitious collision has no physical reaction.
+    if eta < 0.0:
+        return
 
     # Kill the current particle
     particle["alive"] = False
@@ -195,7 +202,10 @@ def scattering(particle_container, program, data):
         particle_new["w"] = weight_product
 
         # Sample scattering angle
-        mu0 = 2.0 * rng.lcg(particle_container_new) - 1.0
+        if eta > 0.0:
+            mu0 = sample_screened_rutherford_mu(eta, particle_container_new)
+        else:
+            mu0 = 2.0 * rng.lcg(particle_container_new) - 1.0
 
         # Scatter direction
         azi = 2.0 * PI * rng.lcg(particle_container_new)
@@ -230,6 +240,58 @@ def scattering(particle_container, program, data):
             particle["w"] = particle_new["w"]
         else:
             particle_bank_module.bank_active_particle(particle_container_new, program)
+
+
+@njit
+def sample_screened_rutherford_mu(eta, particle_container):
+    xi = rng.lcg(particle_container)
+    return 1.0 + 2.0 * eta - 2.0 * eta * (1.0 + eta) / (eta + xi)
+
+
+@njit
+def apply_fokker_planck_segment_step(particle_container, simulation, data, distance):
+    particle = particle_container[0]
+    material = simulation["multigroup_materials"][particle["material_ID"]]
+    eta = data[material["mgxs_scatter_eta_offset"] + particle["g"]]
+
+    if eta < 0.0:
+        sample_fokker_planck_direction_step(particle_container, -eta, distance)
+
+
+@njit
+def sample_standard_normal(particle_container):
+    u1 = rng.lcg(particle_container)
+    if u1 < 1.0e-16:
+        u1 = 1.0e-16
+    u2 = rng.lcg(particle_container)
+    return math.sqrt(-2.0 * math.log(u1)) * math.cos(2.0 * PI * u2)
+
+
+@njit
+def sample_fokker_planck_direction_step(particle_container, sigma_tr, distance):
+    particle = particle_container[0]
+
+    variance = sigma_tr * distance
+    if variance <= 0.0:
+        return
+
+    sigma = math.sqrt(variance)
+    theta_1 = sigma * sample_standard_normal(particle_container)
+    theta_2 = sigma * sample_standard_normal(particle_container)
+    theta = math.sqrt(theta_1 * theta_1 + theta_2 * theta_2)
+
+    if theta <= 1.0e-14:
+        return
+
+    mu0 = math.cos(theta)
+    azi = math.atan2(theta_2, theta_1)
+
+    ux_new, uy_new, uz_new = scatter_direction(
+        particle["ux"], particle["uy"], particle["uz"], mu0, azi
+    )
+    particle["ux"] = ux_new
+    particle["uy"] = uy_new
+    particle["uz"] = uz_new
 
 
 @njit

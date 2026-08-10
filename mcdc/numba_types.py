@@ -374,6 +374,8 @@ multigroup_material = into_dtype([
     ('mgxs_capture_length', int64),
     ('mgxs_scatter_offset', int64),
     ('mgxs_scatter_length', int64),
+    ('mgxs_scatter_eta_offset', int64),
+    ('mgxs_scatter_eta_length', int64),
     ('mgxs_fission_offset', int64),
     ('mgxs_fission_length', int64),
     ('mgxs_total_offset', int64),

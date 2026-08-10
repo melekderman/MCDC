@@ -283,7 +283,7 @@ def step_particle(particle_container, program, data):
     particle = particle_container[0]
 
     # Determine and move to event
-    move_to_event(particle_container, simulation, data)
+    distance = move_to_event(particle_container, simulation, data)
 
     # Execute events
     if particle["event"] == EVENT_LOST:
@@ -380,7 +380,7 @@ def move_to_event(particle_container, simulation, data):
             if not geometry.locate_particle(particle_container, simulation, data):
                 # Particle is lost
                 particle["event"] = EVENT_LOST
-                return
+                return 0.0
 
     # ==================================================================================
     # Geometry inspection
@@ -394,7 +394,7 @@ def move_to_event(particle_container, simulation, data):
 
     # Particle is lost?
     if particle["event"] == EVENT_LOST:
-        return
+        return 0.0
 
     # ==================================================================================
     # Get distances to other events
@@ -484,3 +484,12 @@ def move_to_event(particle_container, simulation, data):
 
     # Move particle
     particle_module.move(particle_container, distance, simulation, data)
+
+    # In multigroup FP mode, fictitious collision distances are only a
+    # numerical clock for angular diffusion.  Apply the FP direction increment
+    # over every transported segment, including boundary-truncated segments.
+    if settings["neutron_multigroup_mode"]:
+        physics.neutron.multigroup.apply_fokker_planck_segment_step(
+            particle_container, simulation, data, distance
+        )
+    return distance
