@@ -4,6 +4,5 @@ from .interface import (
     get_cell,
     check_cell,
     distance_to_nearest_surface,
-    surface_crossing,
     check_coincidence,
 )

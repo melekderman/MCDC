@@ -1,0 +1,66 @@
+# Version control
+.git/
+.github/
+
+# Package builds
+build/
+dist/
+.eggs/
+*.egg-info/
+
+# Material and cross-section libraries
+mcdc_xs/
+MCDC-Xsec/
+
+# Python caches
+**/__pycache__/
+*.pyc
+*.nbc
+*.nbi
+.pytest_cache/
+.coverage*
+htmlcov/
+
+# GPU caches
+__ptxcache__/
+__harmonize_cache__/
+
+# Development environments and editors
+.venv/
+venv/
+env/
+.spyproject
+*.swp
+.vscode/
+**/.idea/
+
+# Generated simulation output
+*output.h5
+output*.h5
+*.png
+*.gif
+*.mp4
+
+# Cluster and profiling output
+*.out
+*.pbs
+*.log
+*.prof
+
+# Documentation and container sources
+docs/
+containers/
+
+# Container artifacts
+*.sif
+*_sandbox
+*.tar
+
+# Temporary and operating-system files
+tmp
+tmp.py
+tmp_*
+*_tmp.py
+*.core
+.DS_Store
+**/.DS_Store

@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import Sequence
 import numpy as np
 
 from numpy import float64
@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 ####
 
 from mcdc.constant import INF, MESH_STRUCTURED, MESH_UNIFORM
-from mcdc.object_.base import ObjectPolymorphic
+from mcdc.object_.base import MCDCPolymorphic
 from mcdc.print_ import print_1d_array
 
 # ======================================================================================
@@ -15,41 +15,31 @@ from mcdc.print_ import print_1d_array
 # ======================================================================================
 
 
-class MeshBase(ObjectPolymorphic):
-    # Annotations for Numba mode
-    label: str = "mesh"
-    #
+class MeshBase(MCDCPolymorphic):
+    """Base class for spatial meshes used by tallies and techniques."""
+
+    # MC/DC framework metadata
+    label = "mesh"
+    sub_type = -1  # Polymorphic base
+
     name: str
     N_bin: int
     Nx: int
     Ny: int
     Nz: int
 
-    def __init__(self, type_, name):
-        super().__init__(type_)
+    def __init__(self, name: str) -> None:
+        super().__init__()
 
-        # Set name
-        if name != "":
-            self.name = name
-        else:
-            self.name = f"{self.label}_{self.child_ID}"
-
+        self.name = name or "(Unnamed mesh)"
         self.N_bin = 0
 
-    def __repr__(self):
-        text = "\n"
-        text += f"{decode_type(self.type)}\n"
-        text += f"  - ID: {self.ID}\n"
+    def __repr__(self) -> str:
+        text = super().__repr__()
+
         text += f"  - Name: {self.name}\n"
         text += f"  - # of bins: {self.N_bin}\n"
         return text
-
-
-def decode_type(type_):
-    if type_ == MESH_UNIFORM:
-        return "Uniform mesh"
-    elif type_ == MESH_STRUCTURED:
-        return "Structured mesh"
 
 
 # ======================================================================================
@@ -58,9 +48,43 @@ def decode_type(type_):
 
 
 class MeshUniform(MeshBase):
-    # Annotations for Numba mode
-    label: str = "uniform_mesh"
-    #
+    """Uniform spatial bins for simulation tallies and transport techniques.
+
+    Parameters
+    ----------
+    name : str, optional
+        User-facing mesh name.
+    x, y, z : tuple of (float, float, int), optional
+        ``(origin, spacing, number_of_bins)`` for each axis, in cm. Omitted
+        axes default to one effectively unbounded bin.
+
+    Examples
+    --------
+    Create 100 uniform bins along z from 0 to 10 cm:
+
+    >>> import mcdc
+    >>> mesh = mcdc.MeshUniform(z=(0.0, 0.1, 100))
+
+    Create a two-dimensional x-y mesh:
+
+    >>> mesh_xy = mcdc.MeshUniform(
+    ...     x=(-5.0, 0.5, 20),
+    ...     y=(-5.0, 0.5, 20),
+    ... )
+
+    Create a three-dimensional mesh with different axis spacings:
+
+    >>> mesh_xyz = mcdc.MeshUniform(
+    ...     x=(0.0, 1.0, 10),
+    ...     y=(0.0, 2.0, 5),
+    ...     z=(-3.0, 0.25, 24),
+    ... )
+    """
+
+    # MC/DC framework metadata
+    label = "uniform_mesh"
+    sub_type = MESH_UNIFORM
+
     x0: float
     dx: float
     Nx: int
@@ -77,9 +101,10 @@ class MeshUniform(MeshBase):
         x: tuple[float, float, int] = (-INF, 2 * INF, 1),
         y: tuple[float, float, int] = (-INF, 2 * INF, 1),
         z: tuple[float, float, int] = (-INF, 2 * INF, 1),
-    ):
-        type_ = MESH_UNIFORM
-        super().__init__(type_, name)
+    ) -> None:
+        super().__init__(
+            name,
+        )
 
         # Set the grid
         self.x0 = x[0]
@@ -94,7 +119,7 @@ class MeshUniform(MeshBase):
 
         self.N_bin = self.Nx * self.Ny * self.Nz
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         text = super().__repr__()
         text += f"  - Grid specification\n"
         text += f"    - (x0, dx, Nx): ({self.x0}, {self.dx}, {self.Nx}) [cm]\n"
@@ -109,9 +134,44 @@ class MeshUniform(MeshBase):
 
 
 class MeshStructured(MeshBase):
-    # Annotations for Numba mode
-    label: str = "structured_mesh"
-    #
+    """Structured spatial bins for simulation tallies and transport techniques.
+
+    Parameters
+    ----------
+    name : str, optional
+        User-facing mesh name.
+    x, y, z : sequence of float, optional
+        Strictly ordered grid boundaries in cm. Each omitted axis defaults to
+        one effectively unbounded bin.
+
+    Examples
+    --------
+    Create nonuniform bins along z:
+
+    >>> import mcdc
+    >>> mesh = mcdc.MeshStructured(z=[0.0, 0.5, 2.0, 10.0])
+
+    Create a two-dimensional mesh from explicit boundaries:
+
+    >>> mesh_xy = mcdc.MeshStructured(
+    ...     x=[-2.0, -1.0, 0.0, 2.0],
+    ...     y=[-3.0, 0.0, 1.0, 3.0],
+    ... )
+
+    Mix uniformly generated and explicitly listed boundaries:
+
+    >>> import numpy as np
+    >>> mesh_xyz = mcdc.MeshStructured(
+    ...     x=np.linspace(-5.0, 5.0, 21),
+    ...     y=[-1.0, 0.0, 1.0],
+    ...     z=np.linspace(0.0, 10.0, 101),
+    ... )
+    """
+
+    # MC/DC framework metadata
+    label = "structured_mesh"
+    sub_type = MESH_STRUCTURED
+
     x: NDArray[float64]
     y: NDArray[float64]
     z: NDArray[float64]
@@ -119,12 +179,11 @@ class MeshStructured(MeshBase):
     def __init__(
         self,
         name: str = "",
-        x: Iterable[float] = [-INF, INF],
-        y: Iterable[float] = [-INF, INF],
-        z: Iterable[float] = [-INF, INF],
-    ):
-        type_ = MESH_STRUCTURED
-        super().__init__(type_, name)
+        x: Sequence[float] | NDArray[float64] = np.array([-INF, INF]),
+        y: Sequence[float] | NDArray[float64] = np.array([-INF, INF]),
+        z: Sequence[float] | NDArray[float64] = np.array([-INF, INF]),
+    ) -> None:
+        super().__init__(name)
 
         # Set the grid
         self.x = np.array(x)
@@ -137,7 +196,7 @@ class MeshStructured(MeshBase):
 
         self.N_bin = self.Nx * self.Ny * self.Nz
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         text = super().__repr__()
         text += f"  - Grid specification\n"
         text += f"    - x {print_1d_array(self.x)} cm\n"

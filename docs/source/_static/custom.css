@@ -1,0 +1,28 @@
+/* Hide the "class" keyword prefix on autoclass signatures
+   so they render like function calls (e.g. mcdc.Universe(...) instead of
+   class mcdc.Universe(...)). */
+dt.sig.sig-object.py > em.property {
+    display: none;
+}
+
+/* Align Simulation-owned settings and techniques with regular class members. */
+.simulation-members {
+    margin-left: 30px;
+}
+
+/* Separate the architecture flow figure from its introductory discussion. */
+.architecture-flow-figure {
+    margin-bottom: 1.5rem;
+}
+
+/* Separate the architecture component table from its follow-up discussion. */
+.architecture-component-followup {
+    margin-top: 1.5rem;
+}
+
+/* Hide the Read the Docs version flyout because the site already provides a
+   version switcher in the top navigation. */
+readthedocs-flyout,
+.rst-versions {
+    display: none !important;
+}
