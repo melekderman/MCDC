@@ -7,9 +7,9 @@ import mcdc.transport.rng as rng
 
 
 @njit
-def move(particle_container, distance, mcdc, data):
+def move(particle_container, distance, simulation, data):
     particle = particle_container[0]
-    ut = 1.0 / physics.particle_speed(particle_container, mcdc, data)
+    ut = 1.0 / physics.particle_speed(particle_container, simulation, data)
 
     particle["x"] += particle["ux"] * distance
     particle["y"] += particle["uy"] * distance
@@ -29,7 +29,6 @@ def copy(target_particle_container, source_particle_container):
     target_particle["ux"] = source_particle["ux"]
     target_particle["uy"] = source_particle["uy"]
     target_particle["uz"] = source_particle["uz"]
-    target_particle["g"] = source_particle["g"]
     target_particle["E"] = source_particle["E"]
     target_particle["w"] = source_particle["w"]
     target_particle["particle_type"] = source_particle["particle_type"]

@@ -7,18 +7,17 @@ from numpy.typing import NDArray
 
 ####
 
-from mcdc.object_.base import ObjectNonSingleton
+from mcdc.constant import INTERPOLATION_LINEAR
+from mcdc.object_.base import MCDCObject
 from mcdc.object_.data import DataBase, DataPolynomial, DataTable
 from mcdc.object_.distribution import DistributionBase
-from mcdc.object_.reaction import (
-    ReactionNeutronCapture,
-    ReactionNeutronElasticScattering,
-    ReactionNeutronFission,
-    ReactionNeutronInelasticScattering,
-    decode_type,
+from mcdc.object_.neutron_reaction import (
+    NeutronReactionCapture,
+    NeutronReactionElasticScattering,
+    NeutronReactionFission,
+    NeutronReactionInelasticScattering,
     set_energy_distribution,
 )
-from mcdc.object_.simulation import simulation
 from mcdc.print_ import print_1d_array, print_error
 
 # ======================================================================================
@@ -26,31 +25,53 @@ from mcdc.print_ import print_1d_array, print_error
 # ======================================================================================
 
 
-class Nuclide(ObjectNonSingleton):
-    # Annotations for Numba mode
-    label: str = "nuclide"
-    #
+class Nuclide(MCDCObject):
+    """Temperature-specific nuclide definition for the MC/DC HDF5 library.
+
+    Parameters
+    ----------
+    nuclide_name : str
+        Nuclide identifier, such as ``"U235"``.
+    temperature : float
+        Library temperature in kelvin.
+
+    Notes
+    -----
+    Construction records the nuclide identity without accessing the data
+    library. Basic properties are loaded when the nuclide is compiled into a
+    simulation. Neutron cross sections, reactions, multiplicities, and
+    delayed-neutron data are loaded later by :meth:`set_neutron_data`.
+    """
+
+    # MC/DC framework metadata
+    label = "nuclide"
+
     name: str
     temperature: float
+    atomic_number: int
+    mass_number: int
     atomic_weight_ratio: float
     fissionable: bool
     excitation_level: int
-    xs_energy_grid: NDArray[float64]
-    total_xs: NDArray[float64]
-    elastic_xs: NDArray[float64]
-    capture_xs: NDArray[float64]
-    inelastic_xs: NDArray[float64]
-    fission_xs: NDArray[float64]
-    elastic_scattering_reactions: list[ReactionNeutronElasticScattering]
-    capture_reactions: list[ReactionNeutronCapture]
-    inelastic_scattering_reactions: list[ReactionNeutronInelasticScattering]
-    fission_reactions: list[ReactionNeutronFission]
-    fission_prompt_multiplicity: DataBase
-    fission_delayed_multiplicity: DataBase
-    N_fission_delayed_precursor: int
-    fission_delayed_fractions: NDArray[float64]
-    fission_delayed_decay_rates: NDArray[float64]
-    fission_delayed_spectra: list[DistributionBase]
+    #
+    neutron_xs_energy_grid: NDArray[float64]
+    neutron_total_xs: NDArray[float64]
+    neutron_elastic_xs: NDArray[float64]
+    neutron_capture_xs: NDArray[float64]
+    neutron_inelastic_xs: NDArray[float64]
+    neutron_fission_xs: NDArray[float64]
+    #
+    neutron_elastic_scattering_reactions: list[NeutronReactionElasticScattering]
+    neutron_capture_reactions: list[NeutronReactionCapture]
+    neutron_inelastic_scattering_reactions: list[NeutronReactionInelasticScattering]
+    neutron_fission_reactions: list[NeutronReactionFission]
+    #
+    neutron_fission_prompt_multiplicity: DataBase
+    neutron_fission_delayed_multiplicity: DataBase
+    N_neutron_fission_delayed_precursor: int
+    neutron_fission_delayed_fractions: NDArray[float64]
+    neutron_fission_delayed_decay_rates: NDArray[float64]
+    neutron_fission_delayed_spectra: list[DistributionBase]
 
     def __init__(self, nuclide_name, temperature):
         super().__init__()
@@ -58,15 +79,47 @@ class Nuclide(ObjectNonSingleton):
         self.name = nuclide_name
         self.temperature = temperature
 
-        # Set attributes from the hdf5 file
+    def _compile_into_simulation(self, simulation) -> bool:
+        """Load basic properties and register with the owning simulation."""
+        if self.compile_ID == simulation.compile_ID:
+            return False
+
+        dir_name = os.getenv("MCDC_LIB")
+        if dir_name is None:
+            print_error("Environment variable MCDC_LIB is not set")
+
+        file_name = f"{self.name}-{self.temperature}K.h5"
+        file_path = os.path.join(dir_name, file_name)
+        if not os.path.isfile(file_path):
+            print_error(
+                f"Nuclide {self.name} at temperature {self.temperature} K "
+                "is not available in the library"
+            )
+
+        with h5py.File(file_path, "r") as file:
+            self.atomic_number = int(file["atomic_number"][()])
+            self.mass_number = int(file["mass_number"][()])
+            self.atomic_weight_ratio = file["atomic_weight_ratio"][()]
+            self.fissionable = bool(file["fissionable"][()])
+            self.excitation_level = int(file["excitation_level"][()])
+
+        return super()._compile_into_simulation(simulation)
+
+    def set_neutron_data(self, simulation):
+        """Load and attach neutron physics data from ``MCDC_LIB``.
+
+        Parameters
+        ----------
+        simulation : Simulation
+            Simulation that owns placeholder data and compiled distributions.
+        """
+        nuclide_name = self.name
+        temperature = self.temperature
+
+        # Load data library
         dir_name = os.getenv("MCDC_LIB")
         file_name = f"{nuclide_name}-{temperature}K.h5"
         file = h5py.File(f"{dir_name}/{file_name}", "r")
-
-        # Basic properties
-        self.atomic_weight_ratio = file["atomic_weight_ratio"][()]
-        self.fissionable = bool(file["fissionable"][()])
-        self.excitation_level = int(file["excitation_level"][()])
 
         # The reactions
         rx_names = [
@@ -93,57 +146,60 @@ class Nuclide(ObjectNonSingleton):
 
         # Energy grid
         xs_energy = file["neutron_reactions/xs_energy_grid"][()] * 1e6  # MeV to eV
-        self.xs_energy_grid = xs_energy
+        self.neutron_xs_energy_grid = xs_energy
 
         # The total XS
-        self.total_xs = np.zeros_like(self.xs_energy_grid)
-        self.elastic_xs = np.zeros_like(self.xs_energy_grid)
-        self.capture_xs = np.zeros_like(self.xs_energy_grid)
-        self.inelastic_xs = np.zeros_like(self.xs_energy_grid)
-        self.fission_xs = np.zeros_like(self.xs_energy_grid)
+        self.neutron_total_xs = np.zeros_like(self.neutron_xs_energy_grid)
+        self.neutron_elastic_xs = np.zeros_like(self.neutron_xs_energy_grid)
+        self.neutron_capture_xs = np.zeros_like(self.neutron_xs_energy_grid)
+        self.neutron_inelastic_xs = np.zeros_like(self.neutron_xs_energy_grid)
+        self.neutron_fission_xs = np.zeros_like(self.neutron_xs_energy_grid)
 
         xs_containers = [
-            self.elastic_xs,
-            self.capture_xs,
-            self.inelastic_xs,
-            self.fission_xs,
+            self.neutron_elastic_xs,
+            self.neutron_capture_xs,
+            self.neutron_inelastic_xs,
+            self.neutron_fission_xs,
         ]
         for xs_container, rx_name in list(zip(xs_containers, rx_names)):
             for MT in MTs[rx_name]:
                 xs = file[f"neutron_reactions/{rx_name}/{MT}/xs"]
                 xs_container[xs.attrs["offset"] :] += xs[()]
 
-        self.total_xs = (
-            self.elastic_xs + self.capture_xs + self.inelastic_xs + self.fission_xs
+        self.neutron_total_xs = (
+            self.neutron_elastic_xs
+            + self.neutron_capture_xs
+            + self.neutron_inelastic_xs
+            + self.neutron_fission_xs
         )
 
         # ==========================================================================
         # The reactions
         # ==========================================================================
 
-        self.elastic_scattering_reactions = []
-        self.capture_reactions = []
-        self.inelastic_scattering_reactions = []
-        self.fission_reactions = []
+        self.neutron_elastic_scattering_reactions = []
+        self.neutron_capture_reactions = []
+        self.neutron_inelastic_scattering_reactions = []
+        self.neutron_fission_reactions = []
 
         rx_containers = [
-            self.elastic_scattering_reactions,
-            self.capture_reactions,
-            self.inelastic_scattering_reactions,
-            self.fission_reactions,
+            self.neutron_elastic_scattering_reactions,
+            self.neutron_capture_reactions,
+            self.neutron_inelastic_scattering_reactions,
+            self.neutron_fission_reactions,
         ]
         rx_classes = [
-            ReactionNeutronElasticScattering,
-            ReactionNeutronCapture,
-            ReactionNeutronInelasticScattering,
-            ReactionNeutronFission,
+            NeutronReactionElasticScattering,
+            NeutronReactionCapture,
+            NeutronReactionInelasticScattering,
+            NeutronReactionFission,
         ]
         for rx_container, rx_name, rx_class in list(
             zip(rx_containers, rx_names, rx_classes)
         ):
             for MT in MTs[rx_name]:
                 h5_group = file[f"neutron_reactions/{rx_name}/{MT}"]
-                reaction = rx_class.from_h5_group(h5_group)
+                reaction = rx_class.from_h5_group(h5_group, simulation)
                 rx_container.append(reaction)
 
         # ==============================================================================
@@ -151,41 +207,43 @@ class Nuclide(ObjectNonSingleton):
         # ==============================================================================
 
         if not self.fissionable:
-            self.fission_prompt_multiplicity = simulation.data[0]
-            self.fission_delayed_multiplicity = simulation.data[0]
-            self.N_fission_delayed_precursor = 0
-            self.fission_delayed_fractions = np.zeros(0)
-            self.fission_delayed_decay_rates = np.zeros(0)
-            self.fission_delayed_spectra = []
+            self.neutron_fission_prompt_multiplicity = simulation.data[0]
+            self.neutron_fission_delayed_multiplicity = simulation.data[0]
+            self.N_neutron_fission_delayed_precursor = 0
+            self.neutron_fission_delayed_fractions = np.zeros(0)
+            self.neutron_fission_delayed_decay_rates = np.zeros(0)
+            self.neutron_fission_delayed_spectra = []
         else:
             fission_group = file["neutron_reactions/fission"]
 
             # Multiplicities
-            self.fission_prompt_multiplicity = set_fission_multiplicity(
+            self.neutron_fission_prompt_multiplicity = set_fission_multiplicity(
                 fission_group["prompt_multiplicity"]
             )
-            self.fission_delayed_multiplicity = set_fission_multiplicity(
+            self.neutron_fission_delayed_multiplicity = set_fission_multiplicity(
                 fission_group["delayed_multiplicity"]
             )
 
             # Delayed fractions and decay rates
-            self.fission_delayed_fractions = fission_group[
+            self.neutron_fission_delayed_fractions = fission_group[
                 "delayed_neutron_precursors/fractions"
             ][()]
-            self.fission_delayed_decay_rates = fission_group[
+            self.neutron_fission_delayed_decay_rates = fission_group[
                 "delayed_neutron_precursors/decay_rates"
             ][()]
-            self.N_fission_delayed_precursor = len(self.fission_delayed_fractions)
+            self.N_neutron_fission_delayed_precursor = len(
+                self.neutron_fission_delayed_fractions
+            )
 
             # Delayed spectra
-            self.fission_delayed_spectra = []
+            self.neutron_fission_delayed_spectra = []
             spectrum_names = [
                 x
                 for x in fission_group["delayed_neutron_precursors"]
                 if x.startswith("energy_spectrum-")
             ]
             for spectrum_name in spectrum_names:
-                self.fission_delayed_spectra.append(
+                self.neutron_fission_delayed_spectra.append(
                     set_energy_distribution(
                         fission_group[f"delayed_neutron_precursors/{spectrum_name}"]
                     )
@@ -193,26 +251,41 @@ class Nuclide(ObjectNonSingleton):
 
         file.close()
 
+        # Register data loaded during object-model finalization.
+        for reaction_container in rx_containers:
+            for reaction in reaction_container:
+                reaction._compile_into_simulation(simulation)
+        self.neutron_fission_prompt_multiplicity._compile_into_simulation(simulation)
+        self.neutron_fission_delayed_multiplicity._compile_into_simulation(simulation)
+        for spectrum in self.neutron_fission_delayed_spectra:
+            spectrum._compile_into_simulation(simulation)
+
     def __repr__(self):
         text = "\n"
         text += f"Nuclide\n"
         text += f"  - ID: {self.ID}\n"
         text += f"  - Name: {self.name}\n"
+        text += f"  - Atomic number: {self.atomic_number}\n"
+        text += f"  - Mass number: {self.mass_number}\n"
         text += f"  - Atomic weight ratio: {self.atomic_weight_ratio}\n"
         text += f"  - Reaction MTs\n"
-        text += f"    - Elastic scattering: {[int(x.MT) for x in self.elastic_scattering_reactions]}\n"
-        text += f"    - Capture: {[int(x.MT) for x in self.capture_reactions]}\n"
-        text += f"    - Inelastic scattering: {[int(x.MT) for x in self.inelastic_scattering_reactions]}\n"
+        text += f"    - Elastic scattering: {[int(x.MT) for x in self.neutron_elastic_scattering_reactions]}\n"
+        text += (
+            f"    - Capture: {[int(x.MT) for x in self.neutron_capture_reactions]}\n"
+        )
+        text += f"    - Inelastic scattering: {[int(x.MT) for x in self.neutron_inelastic_scattering_reactions]}\n"
         if self.fissionable:
-            text += f"    - Fission: {[int(x.MT) for x in self.fission_reactions]}\n"
+            text += f"    - Fission: {[int(x.MT) for x in self.neutron_fission_reactions]}\n"
         text += f"  - Reaction cross-sections (eV, barns)\n"
-        text += f"    - Energy grid {print_1d_array(self.xs_energy_grid)}\n"
-        text += f"    - Total {print_1d_array(self.total_xs)}\n"
-        text += f"    - Elastic scattering {print_1d_array(self.elastic_xs)}\n"
-        text += f"    - Capture {print_1d_array(self.capture_xs)}\n"
-        text += f"    - Inelastic scattering {print_1d_array(self.inelastic_xs)}\n"
+        text += f"    - Energy grid {print_1d_array(self.neutron_xs_energy_grid)}\n"
+        text += f"    - Total {print_1d_array(self.neutron_total_xs)}\n"
+        text += f"    - Elastic scattering {print_1d_array(self.neutron_elastic_xs)}\n"
+        text += f"    - Capture {print_1d_array(self.neutron_capture_xs)}\n"
+        text += (
+            f"    - Inelastic scattering {print_1d_array(self.neutron_inelastic_xs)}\n"
+        )
         if self.fissionable:
-            text += f"    - Fission {print_1d_array(self.fission_xs)}\n"
+            text += f"    - Fission {print_1d_array(self.neutron_fission_xs)}\n"
         return text
 
 
@@ -222,12 +295,14 @@ class Nuclide(ObjectNonSingleton):
 
 
 def set_fission_multiplicity(h5_group):
+    """Build tabulated or polynomial fission multiplicity from HDF5 data."""
+
     multiplicity_type = h5_group.attrs["type"]
 
     if multiplicity_type == "tabulated":
         x = h5_group["energy"][()] * 1e6  # MeV to eV
         y = h5_group["value"][()]
-        multiplicity = DataTable(x, y)
+        multiplicity = DataTable(x, y, INTERPOLATION_LINEAR)
 
     elif multiplicity_type == "polynomial":
         coefficient = h5_group["coefficient"][()]
