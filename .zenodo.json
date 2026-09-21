@@ -1,0 +1,128 @@
+{
+  "title": "MC/DC: Monte Carlo Dynamic Code",
+  "version": "0.15.3",
+  "publication_date": "2026-09-22",
+  "upload_type": "software",
+  "description": "MC/DC is a performant, scalable, and machine-portable Python-based Monte Carlo particle transport software.",
+  "creators": [
+    {
+      "name": "Variansyah, Ilham",
+      "orcid": "0000-0003-3426-7160"
+    },
+    {
+      "name": "Morgan, Joanna Piper",
+      "orcid": "0000-0003-1379-5431"
+    },
+    {
+      "name": "Pasmann, Samuel L.",
+      "orcid": "0000-0003-1391-1471"
+    },
+    {
+      "name": "Clements, Kayla B.",
+      "orcid": "0000-0003-3358-5618"
+    },
+    {
+      "name": "Cuneo, Braxton",
+      "orcid": "0000-0002-6493-0990"
+    },
+    {
+      "name": "Mote, Alexander",
+      "orcid": "0000-0001-5099-0223"
+    },
+    {
+      "name": "Goodman, Charles"
+    },
+    {
+      "name": "Shaw, Caleb"
+    },
+    {
+      "name": "Northrop, Jordan",
+      "orcid": "0000-0003-0420-9699"
+    },
+    {
+      "name": "Pankaj, Rohan",
+      "orcid": "0009-0005-0445-9323"
+    },
+    {
+      "name": "Lame, Ethan",
+      "orcid": "0000-0001-7686-9755"
+    },
+    {
+      "name": "Whewell, Benjamin",
+      "orcid": "0000-0001-7826-5525"
+    },
+    {
+      "name": "McClarren, Ryan G.",
+      "orcid": "0000-0002-8342-6132"
+    },
+    {
+      "name": "Palmer, Todd S.",
+      "orcid": "0000-0003-3310-5258"
+    },
+    {
+      "name": "Chen, Lizhong",
+      "orcid": "0000-0001-5890-7121"
+    },
+    {
+      "name": "Anistratov, Dmitriy Y."
+    },
+    {
+      "name": "Kelley, C. T.",
+      "orcid": "0000-0003-2791-0648"
+    },
+    {
+      "name": "Palmer, Camille J.",
+      "orcid": "0000-0002-7573-4215"
+    },
+    {
+      "name": "Niemeyer, Kyle E.",
+      "orcid": "0000-0003-4425-7097"
+    },
+    {
+      "name": "Derman, Melek",
+      "orcid": "0000-0002-6124-6771"
+    },
+    {
+      "name": "Larsen, Massimo"
+    },
+    {
+      "name": "Glaser, Nathan"
+    },
+    {
+      "name": "Larsen, Gunnar"
+    }
+  ],
+  "access_right": "open",
+  "license": "bsd-3-clause",
+  "keywords": [
+    "monte carlo",
+    "numba",
+    "gpu",
+    "neutron transport",
+    "radiation transport",
+    "electron transport"
+  ],
+  "communities": [
+    {
+      "identifier": "carre"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/mcdc-project/mcdc",
+      "scheme": "url",
+      "relation": "isSupplementTo"
+    },
+    {
+      "identifier": "https://mcdc.readthedocs.io/en/stable/",
+      "scheme": "url",
+      "relation": "isDocumentedBy"
+    },
+    {
+      "identifier": "10.21105/joss.06415",
+      "scheme": "doi",
+      "relation": "isDescribedBy",
+      "resource_type": "publication-article"
+    }
+  ]
+}
