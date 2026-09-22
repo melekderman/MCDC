@@ -84,10 +84,9 @@ Prepare the Release
 #. Review the ``Unreleased`` section of ``CHANGELOG.md``.
    Ensure every user-visible change is included under the correct heading, remove empty headings, and add contributor attribution where appropriate.
    For a patch release, place ``Fixed`` first and confirm that it is non-empty and clearly states the defect that justifies the release.
-#. Finalize the release version and date in ``CHANGELOG.md`` and the ``version`` and ``publication_date`` fields of ``.zenodo.json``, and update the stable entry's display name in ``docs/source/_static/switcher.json`` to the full ``X.Y.Z (stable)`` version while retaining ``stable`` as its version identifier and URL.
-#. Update software authors and verified ORCIDs in ``CITATION.cff`` and ``.zenodo.json``.
-   Keep CFF focused on citation guidance; Zenodo uses ``.zenodo.json`` for release metadata, including the CARRE community (``carre``).
-   Validate both files and include them in the tagged commit.
+#. Finalize the release version and date in ``CHANGELOG.md`` and the ``version`` and ``date-released`` fields of ``CITATION.cff``, and update the stable entry's display name in ``docs/source/_static/switcher.json`` to the full ``X.Y.Z (stable)`` version while retaining ``stable`` as its version identifier and URL.
+#. Review software authors, verified ORCIDs, license, repository links, and the preferred JOSS citation in ``CITATION.cff``, which supplies GitHub citation guidance and Zenodo metadata.
+   Validate the CFF file and include it at the repository root in the tagged commit.
 #. Review the release diff for user-facing behavior.
    Confirm that each affected interface or workflow is reflected in the relevant documentation and examples.
    If existing users must change how they use MC/DC, include the necessary deprecation notice or migration guidance.
@@ -122,7 +121,8 @@ Publish from Main
    * **Finish:** click **Publish release** when creating the release, or **Update release** when editing an existing release.
 
 #. Confirm that the automatically triggered `Publish Python Package to PyPI <https://github.com/mcdc-project/mcdc/actions/workflows/publish-pypi.yml>`_ and `Check citation metadata <https://github.com/mcdc-project/mcdc/actions/workflows/check_citation.yml>`_ workflows complete successfully, and that the release is available from the `stable Read the Docs site <https://mcdc.readthedocs.io/en/stable/>`_.
-#. Verify the Zenodo archive's version, date, authors, license, DOI, and CARRE community inclusion.
+#. Verify the Zenodo archive's version, date, authors, license, and DOI.
+   Submit the record to the CARRE community (``carre``) through Zenodo and confirm inclusion; CFF does not configure community submission.
 #. Smoke-test the published PyPI package in a clean environment with ``python -m pip install "mcdc==X.Y.Z"``, then run a minimal MC/DC simulation.
 
 Return to Development
