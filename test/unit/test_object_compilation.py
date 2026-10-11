@@ -1,16 +1,29 @@
+from fractions import Fraction
+
+import h5py
 import numpy as np
 import pytest
+from scipy.integrate import quad
 
 import mcdc
+import mcdc.numba_types as type_
 import mcdc.object_.simulation as simulation_module
 
+from mcdc.constant import INTERPOLATION_HISTOGRAM, INTERPOLATION_LINEAR, MU_CUTOFF
 from mcdc.object_.base import MCDCBase, MCDCObject
 from mcdc.object_.data import DataPolynomial, DataTable
+from mcdc.object_.electron_reaction import ElectronReactionElasticScattering
 from mcdc.object_.element import Element
 from mcdc.object_.transport_model_data import NeutronMultigroupData
 from mcdc.object_.technique import Technique
 from mcdc.object_.nuclide import Nuclide
 from mcdc.object_.universe import Universe
+from mcdc.transport.physics.electron.native import (
+    compute_scattering_eta,
+    elastic_large_xs,
+    sample_elastic_scattering,
+)
+from mcdc.transport.rng import RNG_C, RNG_G, RNG_MOD
 
 
 class ObjectOwner(Universe):
@@ -235,6 +248,241 @@ def test_native_element_data_loading_is_reported(monkeypatch, capsys):
     simulation.compile()
 
     assert "Loading electron data [1/1]: H.h5" in capsys.readouterr().out
+
+
+@pytest.fixture
+def elastic_reaction_factory(tmp_path):
+    def load(*, small_angle=True, mu_cut=None, representation="CDF", xs_large=1.0):
+        with h5py.File(tmp_path / "elastic.h5", "w") as file:
+            elastic = file.create_group("electron_reactions/elastic_scattering")
+            reaction = elastic.create_group("MT526")
+            reaction.attrs["MT"] = 526
+            reaction["xs"] = [4.0, 4.0]
+            reaction["xs"].attrs["offset"] = 0
+            reaction["reference_frame"] = np.bytes_("LAB")
+            large = reaction.create_group("large_angle")
+            large["xs_energy"] = [1000.0, 10_000.0]
+            large["xs"] = [xs_large, xs_large]
+            cosine = large.create_group("scattering_cosine")
+            cosine["energy_grid"] = [1000.0, 10_000.0]
+            cosine["energy_offset"] = [0, 2]
+            cosine["value"] = [-1.0, 0.5, -0.75, 0.75]
+            cosine[representation] = (
+                [0.0, 1.0, 0.0, 1.0] if representation == "CDF" else [1.0] * 4
+            )
+            # PyEPICS writes small_angle beside MT526, not inside it.
+            if small_angle:
+                small = elastic.create_group("small_angle")
+                if mu_cut is not None:
+                    small.attrs["mu_cut"] = mu_cut
+            return ElectronReactionElasticScattering.from_h5_group(reaction)
+
+    return load
+
+
+@pytest.mark.parametrize("representation", ["CDF", "PDF"])
+@pytest.mark.parametrize(
+    "small_angle, mu_cut, expected",
+    [
+        (False, None, MU_CUTOFF),
+        (True, None, MU_CUTOFF),
+        (True, MU_CUTOFF, MU_CUTOFF),
+        (True, -1.0, -1.0),
+        (True, 0.25, 0.25),
+    ],
+)
+def test_elastic_mu_cut_loads_and_packs(
+    elastic_reaction_factory,
+    prepare_simulation,
+    small_angle,
+    mu_cut,
+    expected,
+    representation,
+):
+    reaction = elastic_reaction_factory(
+        small_angle=small_angle, mu_cut=mu_cut, representation=representation
+    )
+    assert reaction.mu_cut == expected
+    # The analytic support does not change tabulated support, weights, or law.
+    np.testing.assert_array_equal(reaction.xs, [4.0, 4.0])
+    np.testing.assert_array_equal(reaction.xs_large.y, [1.0, 1.0])
+    for table, bounds in zip(reaction.mu.tables, [(-1.0, 0.5), (-0.75, 0.75)]):
+        np.testing.assert_array_equal(table.pdf.x, bounds)
+        interpolation = (
+            INTERPOLATION_HISTOGRAM if representation == "CDF" else INTERPOLATION_LINEAR
+        )
+        np.testing.assert_array_equal(table.pdf.interpolations, [interpolation])
+
+    simulation_container, data = prepare_simulation(objects=[reaction])
+    simulation = simulation_container[0]
+    packed = simulation["electron_elastic_scattering_reactions"][reaction.sub_ID]
+    assert packed["mu_cut"] == expected
+    assert elastic_large_xs(5500.0, packed, simulation, data) == 1.0
+
+
+@pytest.mark.parametrize("mu_cut", [None, -1.0, 0.25, np.nextafter(1.0, 0.0)])
+def test_elastic_constructor_mu_cut(elastic_reaction_factory, mu_cut):
+    source = elastic_reaction_factory()
+    kwargs = {} if mu_cut is None else {"mu_cut": mu_cut}
+    reaction = ElectronReactionElasticScattering(
+        source.MT,
+        source.xs,
+        source.xs_offset_,
+        source.reference_frame,
+        source.xs_large,
+        source.mu,
+        **kwargs,
+    )
+    assert reaction.mu_cut == (MU_CUTOFF if mu_cut is None else mu_cut)
+
+
+@pytest.mark.parametrize(
+    "mu_cut, rounded",
+    [
+        (Fraction(2**54 - 1, 2**54), 1.0),  # Valid input rounds out of range.
+        (Fraction(-(2**54) - 1, 2**54), -1.0),  # Invalid input rounds into range.
+    ],
+)
+def test_elastic_constructor_rejects_rounded_bounds(
+    elastic_reaction_factory, capsys, mu_cut, rounded
+):
+    assert float(mu_cut) == rounded
+    source = elastic_reaction_factory()
+    with pytest.raises(SystemExit):
+        ElectronReactionElasticScattering(
+            source.MT,
+            source.xs,
+            source.xs_offset_,
+            source.reference_frame,
+            source.xs_large,
+            source.mu,
+            mu_cut=mu_cut,
+        )
+    assert (
+        "mu_cut must be finite and satisfy -1 <= mu_cut < 1" in capsys.readouterr().out
+    )
+
+
+@pytest.mark.parametrize("via_hdf5", [False, True])
+@pytest.mark.parametrize(
+    "mu_cut",
+    [-1.000001, 1.0, 1.000001, np.nan, np.inf, -np.inf, "0.25", [0.25], 0.25 + 1j],
+)
+def test_elastic_rejects_invalid_mu_cut(
+    elastic_reaction_factory, capsys, via_hdf5, mu_cut
+):
+    source = elastic_reaction_factory()
+    with pytest.raises(SystemExit):
+        if via_hdf5:
+            elastic_reaction_factory(mu_cut=mu_cut)
+        else:
+            ElectronReactionElasticScattering(
+                source.MT,
+                source.xs,
+                source.xs_offset_,
+                source.reference_frame,
+                source.xs_large,
+                source.mu,
+                mu_cut=mu_cut,
+            )
+    assert (
+        "mu_cut must be finite and satisfy -1 <= mu_cut < 1" in capsys.readouterr().out
+    )
+
+
+@pytest.mark.parametrize("mu_cut", [-1.0, 0.25, MU_CUTOFF])
+def test_elastic_analytic_support_and_integrated_cdf(
+    elastic_reaction_factory, prepare_simulation, mu_cut
+):
+    reaction = elastic_reaction_factory(mu_cut=mu_cut, xs_large=0.0)
+    simulation_container, data = prepare_simulation(objects=[reaction])
+    simulation = simulation_container[0]
+    element = np.zeros(1, dtype=type_.element)[0]
+    element["atomic_number"] = 13
+    energy = 1000.0
+    eta = compute_scattering_eta(energy, 13)
+    width = 1.0 - mu_cut
+
+    # Numerically integrate the Rutherford density in t = (1 - mu) / width.
+    # This avoids integrating a tiny mu interval for the default cone and is
+    # independent of the sampler's inverse-CDF expression.
+    def density(t):
+        return (eta / (eta + width * t)) ** 2
+
+    norm = quad(density, 0.0, 1.0, epsabs=1e-13, epsrel=1e-11)[0]
+    modulus = int(RNG_MOD)
+    inverse = pow(int(RNG_G), -1, modulus)
+    for quantile in (0.001, 0.1, 0.5, 0.9, 0.999):
+        # Target the second LCG draw: the first selects the analytic branch.
+        target = int(quantile * modulus)
+        seed = target
+        for _ in range(2):
+            seed = ((seed - int(RNG_C)) * inverse) % modulus
+        particles = np.zeros(1, dtype=type_.particle)
+        particles[0]["rng_seed"] = np.uint64(seed)
+        particles[0]["E"] = energy
+        particles[0]["uz"] = 1.0
+        sample_elastic_scattering(
+            simulation["electron_reactions"][reaction.ID],
+            4.0,
+            particles,
+            element,
+            simulation,
+            data,
+        )
+        particle = particles[0]
+        mu = particle["uz"]
+        assert mu_cut <= mu <= 1.0
+        assert np.linalg.norm([particle["ux"], particle["uy"], mu]) == pytest.approx(
+            1.0
+        )
+        cdf = (
+            quad(density, (1.0 - mu) / width, 1.0, epsabs=1e-13, epsrel=1e-11)[0] / norm
+        )
+        # Near mu=1, rounding the cosine limits the CDF comparison to ~1e-10.
+        assert cdf == pytest.approx(1.0 - target / modulus, abs=1e-9, rel=0.0)
+        assert particle["rng_seed"] == (int(RNG_G) * target + int(RNG_C)) % modulus
+
+
+@pytest.mark.parametrize("representation", ["CDF", "PDF"])
+@pytest.mark.parametrize(
+    "metadata", [{"small_angle": False}, {}, {"mu_cut": MU_CUTOFF}]
+)
+def test_elastic_default_seeded_sampling_is_unchanged(
+    elastic_reaction_factory, prepare_simulation, metadata, representation
+):
+    reaction = elastic_reaction_factory(representation=representation, **metadata)
+    legacy = ElectronReactionElasticScattering(
+        reaction.MT,
+        reaction.xs,
+        reaction.xs_offset_,
+        reaction.reference_frame,
+        reaction.xs_large,
+        reaction.mu,
+    )
+    legacy.mu_cut = 0.999999  # The runtime record before metadata was loaded.
+    simulation_container, data = prepare_simulation(objects=[reaction, legacy])
+    simulation = simulation_container[0]
+    element = np.zeros(1, dtype=type_.element)[0]
+    element["atomic_number"] = 13
+    particles = np.zeros(1, dtype=type_.particle)
+    particles[0]["rng_seed"] = 2026
+    particles[0]["uz"] = 1.0
+    expected = particles.copy()
+    for energy in (1000.0, 5500.0, 10_000.0):
+        particles[0]["E"] = expected[0]["E"] = energy
+        for _ in range(32):
+            for model, state in ((reaction, particles), (legacy, expected)):
+                sample_elastic_scattering(
+                    simulation["electron_reactions"][model.ID],
+                    4.0,
+                    state,
+                    element,
+                    simulation,
+                    data,
+                )
+            # Includes directions and RNG state, so extra draws also fail.
+            np.testing.assert_array_equal(particles, expected)
 
 
 def test_local_multigroup_grids_pack_hybrid(prepare_simulation):

@@ -1,3 +1,6 @@
+from math import isfinite
+from numbers import Real
+
 from numpy import float64
 from numpy.typing import NDArray
 
@@ -190,7 +193,12 @@ class ElectronReactionIonization(ElectronReactionBase):
 
 
 class ElectronReactionElasticScattering(ElectronReactionBase):
-    """Elastic electron scattering with large-angle cross section and cosine law."""
+    """Elastic electron scattering with tabulated and analytic components.
+
+    ``mu_cut`` is the analytic component's lower cosine bound in [-1, 1),
+    defaulting to ``MU_CUTOFF`` (0.999999).
+    It does not change the tabulated component's support or cross section.
+    """
 
     # MC/DC framework metadata
     label = "electron_elastic_scattering_reaction"
@@ -208,9 +216,19 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
         reference_frame,
         xs_large,
         mu,
+        *,
+        mu_cut=MU_CUTOFF,
     ):
         super().__init__(MT, xs, xs_offset, reference_frame)
-        self.mu_cut = MU_CUTOFF
+        if (
+            not isinstance(mu_cut, Real)
+            or not isfinite(mu_cut)
+            or not -1.0 <= mu_cut < 1.0
+        ):
+            print_error("Elastic mu_cut must be finite and satisfy -1 <= mu_cut < 1.")
+        self.mu_cut = float(mu_cut)
+        if not isfinite(self.mu_cut) or not -1.0 <= self.mu_cut < 1.0:
+            print_error("Elastic mu_cut must be finite and satisfy -1 <= mu_cut < 1.")
         self.xs_large = xs_large
         self.mu = mu
 
@@ -242,7 +260,15 @@ class ElectronReactionElasticScattering(ElectronReactionBase):
                 mu_group["PDF"][()],
             )
 
-        return cls(MT, xs, xs_offset, reference_frame, xs_large, mu)
+        # PyEPICS stores small_angle beside the MT reaction group.
+        small_angle = h5_group.parent.get("small_angle")
+        mu_cut = (
+            small_angle.attrs.get("mu_cut", MU_CUTOFF)
+            if small_angle is not None
+            else MU_CUTOFF
+        )
+
+        return cls(MT, xs, xs_offset, reference_frame, xs_large, mu, mu_cut=mu_cut)
 
     def __repr__(self):
         text = super().__repr__()
